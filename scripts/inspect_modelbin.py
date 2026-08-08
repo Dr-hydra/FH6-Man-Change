@@ -592,10 +592,20 @@ def main() -> int:
     parser.add_argument("modelbin", type=Path, help="Path to an extracted .modelbin")
     parser.add_argument("--json", action="store_true", help="Print the complete report as JSON")
     parser.add_argument("--bones", action="store_true", help="Print every skeleton bone")
+    parser.add_argument("--report", type=Path, help="Write the complete report as JSON")
     args = parser.parse_args()
 
     try:
+        report_path = args.report.resolve() if args.report else None
+        if report_path and report_path.exists():
+            raise OSError(f"refusing to overwrite report: {report_path}")
         report = inspect(args.modelbin)
+        if report_path:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
     except (OSError, ParseError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

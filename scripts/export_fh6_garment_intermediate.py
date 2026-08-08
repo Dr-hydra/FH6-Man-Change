@@ -42,6 +42,7 @@ def arguments() -> argparse.Namespace:
             "head4",
             "head5_display",
             "head6_display",
+            "head7_display",
             "driver_body6",
         ),
         default="single",
@@ -233,6 +234,25 @@ def component_draw_id(policy: str, material_name: str, centroid: Vector) -> int:
         if material_name in {"肌", "发影"}:
             return 5
         raise RuntimeError(f"Unhandled source material in head6_display policy: {material_name!r}")
+    if policy == "head7_display":
+        # Final FBX-first Helmet package. The v007/v008 eye stage adds a
+        # dedicated generated sclera material, so it must not be folded into
+        # the iris or eye-shadow draw.
+        if material_name == "发":
+            return 0
+        if material_name in {"表情", "口内", "目白", "目影"}:
+            return 1
+        if material_name == "面":
+            return 2
+        if material_name in {"目", "目HL"}:
+            return 3
+        if material_name == "睫眉":
+            return 4
+        if material_name in {"肌", "发影"}:
+            return 5
+        if material_name == "巩膜":
+            return 6
+        raise RuntimeError(f"Unhandled source material in head7_display policy: {material_name!r}")
     if policy == "driver_body6":
         # Driver_Alice_F MatI IDs: 0 head, 1 eyelashes, 2 eyes,
         # 3 body, 4 arms/hands, and 5 teeth. The writer expands draw 1 into
@@ -323,6 +343,7 @@ def main() -> None:
         "head4": 4,
         "head5_display": 5,
         "head6_display": 6,
+        "head7_display": 7,
         "driver_body6": 6,
     }
     draw_count = draw_counts[args.draw_policy]
@@ -334,6 +355,7 @@ def main() -> None:
         "head4": {0: "睫眉", 1: "面", 2: "口内", 3: "目"},
         "head5_display": {0: "表情", 1: "目", 2: "面", 3: "肌", 4: "睫眉"},
         "head6_display": {0: "发", 1: "目影", 2: "面", 3: "目", 4: "睫眉", 5: "发影"},
+        "head7_display": {0: "发", 1: "目影", 2: "面", 3: "目", 4: "睫眉", 5: "发影", 6: "巩膜"},
         "driver_body6": {
             0: "面",
             1: "睫眉",

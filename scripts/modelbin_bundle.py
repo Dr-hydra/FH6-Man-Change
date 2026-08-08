@@ -13,7 +13,7 @@ from __future__ import annotations
 import struct
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Sequence
 
 
 class BundleError(ValueError):
@@ -158,6 +158,162 @@ class GrubBundle:
             if not is_claimed:
                 output[index] = self.original[index]
         return bytes(output)
+
+
+@dataclass(frozen=True)
+class MetadataSpec:
+    """Offset-independent metadata used when repacking a bundle prefix."""
+
+    tag: str
+    version: int
+    value: bytes
+
+
+@dataclass(frozen=True)
+class BlobSpec:
+    """Offset-independent blob used when changing a bundle's blob sequence."""
+
+    tag: str
+    version: tuple[int, int]
+    metadata: tuple[MetadataSpec, ...]
+    data: bytes
+    trailing_size: int | None = None
+
+
+def blob_spec(blob: BundleBlob) -> BlobSpec:
+    """Copy a parsed blob into an offset-independent representation."""
+
+    return BlobSpec(
+        tag=blob.tag,
+        version=blob.version,
+        metadata=tuple(
+            MetadataSpec(tag=item.tag, version=item.version, value=item.value)
+            for item in blob.metadata
+        ),
+        data=blob.data,
+        trailing_size=blob.trailing_size,
+    )
+
+
+def _align(value: int, alignment: int) -> int:
+    return (value + alignment - 1) & -alignment
+
+
+def rebuild_with_blob_sequence(
+    bundle: GrubBundle,
+    blobs: Sequence[BlobSpec],
+    *,
+    data_offset_alignment: int = 16,
+    payload_alignment: int = 4,
+) -> bytes:
+    """Repack a bundle after adding, removing, or reordering blobs.
+
+    Unlike :func:`rebuild_with_blob_data`, this function reconstructs the
+    descriptor and metadata prefix because changing the blob count changes the
+    descriptor-table size. Blob payloads and metadata values remain opaque.
+    """
+
+    for name, alignment in (
+        ("data_offset_alignment", data_offset_alignment),
+        ("payload_alignment", payload_alignment),
+    ):
+        if alignment <= 0 or alignment & (alignment - 1):
+            raise BundleError(f"{name} must be a positive power of two, got {alignment}")
+    if bundle.version < (1, 1) and len(blobs) > 0xFFFF:
+        raise BundleError("Legacy bundle blob count exceeds uint16")
+
+    descriptor_end = HEADER.size + len(blobs) * BLOB_DESCRIPTOR.size
+    metadata_records: list[
+        tuple[int, BlobSpec, list[tuple[int, int, MetadataSpec]]]
+    ] = []
+    cursor = descriptor_end
+    for spec in blobs:
+        metadata_offset = cursor
+        cursor += len(spec.metadata) * METADATA_DESCRIPTOR.size
+        entries: list[tuple[int, int, MetadataSpec]] = []
+        for index, metadata in enumerate(spec.metadata):
+            if metadata.version < 0 or metadata.version > 0xF:
+                raise BundleError(
+                    f"metadata version does not fit four bits: {metadata.version}"
+                )
+            if len(metadata.value) > 0xFFF:
+                raise BundleError(f"metadata value too large: {len(metadata.value)}")
+            entry_offset = metadata_offset + index * METADATA_DESCRIPTOR.size
+            value_offset = cursor
+            relative_offset = value_offset - entry_offset
+            if relative_offset > 0xFFFF:
+                raise BundleError(
+                    f"metadata relative offset out of range: {relative_offset}"
+                )
+            entries.append((entry_offset, value_offset, metadata))
+            cursor += len(metadata.value)
+        metadata_records.append((metadata_offset, spec, entries))
+
+    data_offset = _align(cursor, data_offset_alignment)
+    output = bytearray(data_offset)
+    modern_count = len(blobs) if bundle.version >= (1, 1) else 0
+    legacy_count = len(blobs) if bundle.version < (1, 1) else bundle.legacy_blob_count
+    output[: HEADER.size] = HEADER.pack(
+        encode_fourcc("Grub"),
+        bundle.version[0],
+        bundle.version[1],
+        legacy_count,
+        data_offset,
+        0,
+        modern_count,
+    )
+
+    payload_ranges: list[tuple[int, int, int]] = []
+    for spec in blobs:
+        padding = (-len(output)) & (payload_alignment - 1)
+        if padding:
+            output.extend(b"\x00" * padding)
+        payload_offset = len(output)
+        output.extend(spec.data)
+        trailing_size = len(spec.data) if spec.trailing_size is None else spec.trailing_size
+        payload_ranges.append((payload_offset, len(spec.data), trailing_size))
+    final_padding = (-len(output)) & (payload_alignment - 1)
+    if final_padding:
+        output.extend(b"\x00" * final_padding)
+
+    declared_size = len(output)
+    output[: HEADER.size] = HEADER.pack(
+        encode_fourcc("Grub"),
+        bundle.version[0],
+        bundle.version[1],
+        legacy_count,
+        data_offset,
+        declared_size,
+        modern_count,
+    )
+    for index, ((metadata_offset, spec, entries), payload_range) in enumerate(
+        zip(metadata_records, payload_ranges)
+    ):
+        payload_offset, payload_size, trailing_size = payload_range
+        descriptor_offset = HEADER.size + index * BLOB_DESCRIPTOR.size
+        output[
+            descriptor_offset : descriptor_offset + BLOB_DESCRIPTOR.size
+        ] = BLOB_DESCRIPTOR.pack(
+            encode_fourcc(spec.tag),
+            spec.version[0],
+            spec.version[1],
+            len(spec.metadata),
+            metadata_offset,
+            payload_offset,
+            payload_size,
+            trailing_size,
+        )
+        for entry_offset, value_offset, metadata in entries:
+            version_and_size = metadata.version | (len(metadata.value) << 4)
+            relative_offset = value_offset - entry_offset
+            output[
+                entry_offset : entry_offset + METADATA_DESCRIPTOR.size
+            ] = METADATA_DESCRIPTOR.pack(
+                encode_fourcc(metadata.tag), version_and_size, relative_offset
+            )
+            output[value_offset : value_offset + len(metadata.value)] = metadata.value
+
+    return bytes(output)
 
 
 def parse_bundle(data: bytes) -> GrubBundle:

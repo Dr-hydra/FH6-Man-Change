@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Build the versioned Si Display LOD0 swatches and minimal MatI patches.
+"""Build the versioned Si Display LOD0 swatches and complete MatI patches.
 
-The result is an offline workspace milestone.  It deliberately leaves the
-alpha-cloth draw unpatched until a retail ``uber_clothing_alpha`` (or verified
-equivalent) MatI payload is available, and it does not create a deployment ZIP.
+The result is an offline workspace milestone. It requires the final seven-draw
+Head and eight-draw Body/Garment geometry candidates and does not deploy them.
 """
 
 from __future__ import annotations
@@ -23,8 +22,9 @@ from PIL import Image
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 WORKSPACE = SCRIPT_DIR.parent
+PIPELINE_VERSION = "v002"
 DEFAULT_OUTPUT = (
-    WORKSPACE / "work" / "si" / "fbx-source" / "material-pipeline-v001"
+    WORKSPACE / "work" / "si" / "fbx-source" / f"material-pipeline-{PIPELINE_VERSION}"
 )
 DEFAULT_CONTRACT = (
     WORKSPACE
@@ -60,18 +60,18 @@ HELMET_CANDIDATE = (
     / "work"
     / "si"
     / "fbx-source"
-    / "milestone-05-modelbin-lod0-v001"
+    / "milestone-05-modelbin-lod0-v002"
     / "helmet"
-    / "Helmet_Race_Modern.lod0-candidate-v003.modelbin"
+    / "Helmet_Race_Modern.lod0-head7.modelbin"
 )
 OUTFIT_CANDIDATE = (
     WORKSPACE
     / "work"
     / "si"
     / "fbx-source"
-    / "milestone-05-modelbin-lod0-v001"
+    / "milestone-05-modelbin-lod0-v002"
     / "outfit"
-    / "Outfit_Race_Suit_Modern_F.lod0-candidate.modelbin"
+    / "Outfit_Race_Suit_Modern_F.lod0-final.modelbin"
 )
 FACE_DONOR = (
     "work/si/components/baselines/head-face/extracted/DRV_BA_F_01_Face.modelbin"
@@ -82,6 +82,10 @@ ALICE_DONOR = (
 FEMALE_DONOR = "work/si/components/baselines/body/extracted/Female.modelbin"
 OUTFIT_DONOR = (
     "work/donors/Outfit_Race_Suit_Modern_F/extracted/Outfit_Race_Suit_Modern_F.modelbin"
+)
+ALPHA_CLOTH_DONOR = (
+    "work/si/fbx-source/material-donors-v001/Lower_Jean_Shorts_Ripped_F/"
+    "extracted/Lower_Jean_Shorts_Ripped_F.modelbin"
 )
 
 
@@ -174,6 +178,19 @@ SWATCH_PLAN: list[dict[str, Any]] = [
         "key": "cloth_normal",
         "source": "T_actor_jsspsi_cloth_01_N.png",
         "template": "People/swatches/Ambassador_Helena_F_NRML_d8385b55-ee25-499b-9b25-b8908d4a19be.swatchbin",
+        "color_space": "linear",
+        "normal_xy": True,
+    },
+    {
+        "key": "cloth_alpha_base",
+        "source": "T_actor_jsspsi_cloth_02_D.png",
+        "template": "Clothes/swatches/lolita_buttons_DIFF_f03db631-dd56-4546-982a-3125a3387d93.swatchbin",
+        "color_space": "srgb",
+    },
+    {
+        "key": "cloth_alpha_normal",
+        "source": "T_actor_jsspsi_cloth_02_N.png",
+        "template": "Clothes/swatches/Lower_JeanShorts_Ripped_NRML_ea54bb0d-a137-4605-a158-6697353d456e.swatchbin",
         "color_space": "linear",
         "normal_xy": True,
     },
@@ -278,6 +295,12 @@ def cloth_values() -> dict[str, dict[str, Any]]:
     }
 
 
+def alpha_cloth_values() -> dict[str, dict[str, Any]]:
+    return {
+        "64490d74": {"name": "FuzzAmount_floatVal", "type": 2, "value": 0.0},
+    }
+
+
 def build_profiles(swatches: dict[str, dict[str, Any]], output: Path) -> tuple[Path, Path]:
     face_textures = texture_map(
         swatches,
@@ -319,6 +342,13 @@ def build_profiles(swatches: dict[str, dict[str, Any]], output: Path) -> tuple[P
             "4a8c9771": "neutral_transparent",
         },
     )
+    alpha_cloth_textures = texture_map(
+        swatches,
+        {
+            "ee34b08b": "cloth_alpha_base",
+            "17833b17": "cloth_alpha_normal",
+        },
+    )
 
     def material(
         target: int,
@@ -344,7 +374,7 @@ def build_profiles(swatches: dict[str, dict[str, Any]], output: Path) -> tuple[P
 
     helmet = {
         "schema_version": 1,
-        "scope": "current LOD0 six-draw Helmet candidate; generated sclera draw is not present",
+        "scope": "final LOD0 seven-draw Helmet candidate with dedicated sclera",
         "materials": [
             material(0, "hair", ALICE_DONOR, 1, "hairalphatestnotangentgradmap", "0100", hair_textures, hair_values()),
             material(1, "eye_shadow", FACE_DONOR, 0, "eyesao", "0001", texture_map(swatches, {"0fea383b": "eye_shadow_mask"})),
@@ -352,6 +382,7 @@ def build_profiles(swatches: dict[str, dict[str, Any]], output: Path) -> tuple[P
             material(3, "iris", FACE_DONOR, 3, "charactereye", "0000", iris_textures),
             material(4, "hair_brow", ALICE_DONOR, 1, "hairalphatestnotangentgradmap", "0100", hair_textures, hair_values()),
             material(5, "hair_shadow", FACE_DONOR, 0, "eyesao", "0001", texture_map(swatches, {"0fea383b": "hair_shadow_mask"})),
+            material(6, "sclera", ALICE_DONOR, 2, "charactereyeball", "0000", {}),
         ],
     }
     outfit_materials = []
@@ -363,22 +394,27 @@ def build_profiles(swatches: dict[str, dict[str, Any]], output: Path) -> tuple[P
         outfit_materials.append(
             material(target, "skin_body", FEMALE_DONOR, 0, "characterskin", "0000", body_textures)
         )
+    outfit_materials.append(
+        material(
+            6,
+            "cloth_alpha",
+            ALPHA_CLOTH_DONOR,
+            3,
+            "uber_clothing_transparancy",
+            "0100",
+            alpha_cloth_textures,
+            alpha_cloth_values(),
+        )
+    )
     outfit = {
         "schema_version": 1,
-        "scope": "current LOD0 Outfit candidate; material 6 alpha cloth intentionally retained and must fail leakage scan",
-        "blocked_materials": [
-            {
-                "target_material_id": 6,
-                "role": "cloth_alpha",
-                "reason": "No verified retail uber_clothing_alpha/uber_clothing_transparancy MatI payload in workspace",
-            }
-        ],
+        "scope": "final LOD0 Outfit candidate with verified retail alpha-cloth template",
         "materials": outfit_materials,
     }
     profile_dir = output / "profiles"
     profile_dir.mkdir(parents=True)
-    helmet_path = profile_dir / "helmet-current-lod0-v001.json"
-    outfit_path = profile_dir / "outfit-current-lod0-partial-v001.json"
+    helmet_path = profile_dir / f"helmet-final-lod0-{PIPELINE_VERSION}.json"
+    outfit_path = profile_dir / f"outfit-final-lod0-{PIPELINE_VERSION}.json"
     helmet_path.write_text(json.dumps(helmet, ensure_ascii=False, indent=2), encoding="utf-8")
     outfit_path.write_text(json.dumps(outfit, ensure_ascii=False, indent=2), encoding="utf-8")
     return helmet_path, outfit_path
@@ -389,6 +425,7 @@ def main() -> int:
     output = args.output_dir.resolve()
     contract_path = args.contract.resolve(strict=True)
     archive = args.template_archive.resolve(strict=True)
+    (WORKSPACE / ALPHA_CLOTH_DONOR).resolve(strict=True)
     if output.exists():
         raise FileExistsError(f"Refusing to reuse milestone directory {output}")
     output.mkdir(parents=True)
@@ -402,8 +439,8 @@ def main() -> int:
     used_source_files: set[str] = set()
     for spec in SWATCH_PLAN:
         key = spec["key"]
-        guid = uuid.uuid5(NAMESPACE, f"si-display-material-v001:{key}")
-        filename = f"si_display_v001_{key}_{guid}.swatchbin"
+        guid = uuid.uuid5(NAMESPACE, f"si-display-material-{PIPELINE_VERSION}:{key}")
+        filename = f"si_display_{PIPELINE_VERSION}_{key}_{guid}.swatchbin"
         source = SOURCE_ROOT / spec["source"] if "source" in spec else output / "synthetic" / f"{key}.png"
         if "synthetic" in spec:
             synthetic_source(spec["synthetic"], source)
@@ -465,12 +502,12 @@ def main() -> int:
         },
         "game_validated": False,
     }
-    manifest_path = output / "swatches" / "si-display-swatches-v001.json"
+    manifest_path = output / "swatches" / f"si-display-swatches-{PIPELINE_VERSION}.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     helmet_profile, outfit_profile = build_profiles(swatches, output)
-    helmet_output = output / "candidates" / "Helmet_Race_Modern.lod0-materials-v001.modelbin"
-    helmet_report = output / "candidates" / "helmet-materials-v001.report.json"
+    helmet_output = output / "candidates" / f"Helmet_Race_Modern.lod0-materials-{PIPELINE_VERSION}.modelbin"
+    helmet_report = output / "candidates" / f"helmet-materials-{PIPELINE_VERSION}.report.json"
     run(
         [
             sys.executable,
@@ -482,8 +519,8 @@ def main() -> int:
             str(helmet_report),
         ]
     )
-    outfit_output = output / "candidates" / "Outfit_Race_Suit_Modern_F.lod0-materials-partial-v001.modelbin"
-    outfit_report = output / "candidates" / "outfit-materials-partial-v001.report.json"
+    outfit_output = output / "candidates" / f"Outfit_Race_Suit_Modern_F.lod0-materials-{PIPELINE_VERSION}.modelbin"
+    outfit_report = output / "candidates" / f"outfit-materials-{PIPELINE_VERSION}.report.json"
     run(
         [
             sys.executable,
@@ -496,7 +533,7 @@ def main() -> int:
         ]
     )
 
-    helmet_leakage = output / "leakage" / "helmet-v001.report.json"
+    helmet_leakage = output / "leakage" / f"helmet-{PIPELINE_VERSION}.report.json"
     run(
         [
             sys.executable,
@@ -508,7 +545,7 @@ def main() -> int:
             "si_",
         ]
     )
-    outfit_leakage = output / "leakage" / "outfit-partial-v001.report.json"
+    outfit_leakage = output / "leakage" / f"outfit-{PIPELINE_VERSION}.report.json"
     run(
         [
             sys.executable,
@@ -519,12 +556,11 @@ def main() -> int:
             "--require-generated-prefix",
             "si_",
         ],
-        expected=1,
     )
     outfit_scan = json.loads(outfit_leakage.read_text(encoding="utf-8"))
     leaked_materials = sorted({item["material_id"] for item in outfit_scan["findings"]})
-    if leaked_materials != [6]:
-        raise ValueError(f"Expected only blocked alpha material 6 to leak, found {leaked_materials}")
+    if leaked_materials:
+        raise ValueError(f"Final Outfit candidate still leaks donor materials: {leaked_materials}")
 
     summary = {
         "schema_version": 1,
@@ -538,7 +574,7 @@ def main() -> int:
             "helmet_patch_report": str(helmet_report),
             "helmet_leakage_report": str(helmet_leakage),
             "outfit_profile": str(outfit_profile),
-            "outfit_partial_candidate": str(outfit_output),
+            "outfit_candidate": str(outfit_output),
             "outfit_patch_report": str(outfit_report),
             "outfit_leakage_report": str(outfit_leakage),
         },
@@ -549,19 +585,15 @@ def main() -> int:
             "swatch_header_guid_rewritten": True,
             "semantic_header_color_flags_checked": True,
             "skin_hair_iris_eye_shadow_hair_shadow_bindings": True,
+            "sclera_draw_and_charactereyeball_binding": True,
             "opaque_cloth_minimal_binding": True,
+            "alpha_cloth_source_alpha_and_normal_binding": True,
+            "verified_retail_uber_clothing_transparancy_template": True,
             "donor_leakage_scan": True,
-            "helmet_current_candidate_leakage_free": True,
+            "helmet_candidate_leakage_free": True,
+            "outfit_candidate_leakage_free": True,
         },
         "blockers": [
-            {
-                "id": "alpha_cloth_mati_template",
-                "detail": "XML names uber_clothing_alpha and uber_clothing_transparancy, but no verified retail MatI payload exists in the workspace. Outfit material 6 remains deliberately unpatched and the leakage gate fails only that material.",
-            },
-            {
-                "id": "sclera_draw_slot",
-                "detail": "The current six-draw Helmet intermediate has no generated sclera draw. Alice Mat_Eyes/charactereyeball is a verified no-texture template, but geometry must assign its final target material ID before patching.",
-            },
             {
                 "id": "unsupported_source_channels",
                 "detail": "The selected donor MTPR layouts do not expose every source P/RS/ST/RD/SDF/E channel. These remain in the audited contract and are not guessed into binary records.",
@@ -572,12 +604,13 @@ def main() -> int:
             "structural": True,
             "swatch_roundtrip": True,
             "helmet_donor_leakage_pass": True,
-            "outfit_donor_leakage_expected_fail_materials": leaked_materials,
+            "outfit_donor_leakage_pass": True,
+            "outfit_donor_leakage_materials": leaked_materials,
             "game_directory_modified": False,
             "game_validated": False,
         },
     }
-    summary_path = output / "si-display-material-pipeline-v001.report.json"
+    summary_path = output / f"si-display-material-pipeline-{PIPELINE_VERSION}.report.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print("SI_DISPLAY_MATERIAL_PIPELINE=" + json.dumps(summary["outputs"], separators=(",", ":")))
     return 0

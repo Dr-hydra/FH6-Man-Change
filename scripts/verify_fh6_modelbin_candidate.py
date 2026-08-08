@@ -11,7 +11,13 @@ import struct
 from pathlib import Path
 
 import inspect_modelbin as inspector
-from modelbin_bundle import BundleBlob, parse_bundle
+from modelbin_bundle import BundleBlob, BundleError, first_difference, parse_bundle
+from patch_fh6_material_profile import (
+    materials_by_id,
+    normalize_patches,
+    patch_mtpr,
+    shader_info,
+)
 
 
 PRESERVED_TAGS = {"Skel", "VLay", "MatI"}
@@ -22,6 +28,7 @@ HEAD_DISPLAY_RENDER_PASSES = {
     3: 0x19,
     4: 0x38,
     5: 0x3C,
+    6: 0x19,
 }
 
 
@@ -31,6 +38,14 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("candidate", type=Path)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--component", required=True, choices=("helmet", "outfit"))
+    parser.add_argument(
+        "--material-profile",
+        type=Path,
+        help=(
+            "Allow MatI payload changes and verify every final material against "
+            "this explicit profile. The donor must be the pre-material geometry candidate."
+        ),
+    )
     parser.add_argument("--report", required=True, type=Path)
     return parser.parse_args()
 
@@ -56,12 +71,22 @@ def main() -> None:
     donor_path = args.donor.resolve()
     candidate_path = args.candidate.resolve()
     manifest_path = args.manifest.resolve()
+    material_profile_path = (
+        args.material_profile.resolve(strict=True) if args.material_profile else None
+    )
     report_path = args.report.resolve()
     if report_path.exists():
         raise FileExistsError(f"Refusing to overwrite {report_path}")
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    material_profile = (
+        json.loads(material_profile_path.read_text(encoding="utf-8"))
+        if material_profile_path
+        else None
+    )
+    if material_profile is not None and material_profile.get("schema_version") != 1:
+        raise ValueError("Unsupported material profile schema")
     donor_data = donor_path.read_bytes()
     candidate_data = candidate_path.read_bytes()
     donor_outer = parse_bundle(donor_data)
@@ -89,9 +114,10 @@ def main() -> None:
         {"donor": donor_outer.blob_tags, "candidate": candidate_outer.blob_tags},
     )
 
+    preserved_tags = PRESERVED_TAGS - ({"MatI"} if material_profile else set())
     preserved: list[dict] = []
     for donor_blob, candidate_blob in zip(donor_outer.blobs, candidate_outer.blobs):
-        if donor_blob.tag not in PRESERVED_TAGS:
+        if donor_blob.tag not in preserved_tags:
             continue
         data_equal = donor_blob.data == candidate_blob.data
         metadata_equal = metadata_signature(donor_blob) == metadata_signature(candidate_blob)
@@ -105,10 +131,131 @@ def main() -> None:
             }
         )
     check(
-        "preserved.Skel_VLay_MatI",
+        "preserved." + "_".join(sorted(preserved_tags)),
         bool(preserved) and all(item["data_equal"] and item["metadata_equal"] for item in preserved),
         preserved,
     )
+
+    outer_roundtrip_difference = first_difference(
+        candidate_data, candidate_outer.rebuild_lossless()
+    )
+    check(
+        "bundle.lossless_roundtrip",
+        outer_roundtrip_difference is None,
+        {"first_different_offset": outer_roundtrip_difference},
+    )
+
+    material_checks: list[dict] = []
+    if material_profile is not None:
+        unchanged_non_material = []
+        for donor_blob, candidate_blob in zip(donor_outer.blobs, candidate_outer.blobs):
+            if donor_blob.tag == "MatI":
+                continue
+            equal = (
+                donor_blob.tag == candidate_blob.tag
+                and donor_blob.version == candidate_blob.version
+                and donor_blob.trailing_size == candidate_blob.trailing_size
+                and metadata_signature(donor_blob) == metadata_signature(candidate_blob)
+                and donor_blob.data == candidate_blob.data
+            )
+            unchanged_non_material.append(
+                {
+                    "blob_index": candidate_blob.index,
+                    "tag": candidate_blob.tag,
+                    "equal": equal,
+                }
+            )
+        check(
+            "materials.only_MatI_payloads_changed",
+            bool(unchanged_non_material)
+            and all(item["equal"] for item in unchanged_non_material),
+            unchanged_non_material,
+        )
+
+        donor_materials = materials_by_id(donor_outer)
+        candidate_materials = materials_by_id(candidate_outer)
+        profile_specs = {
+            int(item["target_material_id"]): item
+            for item in material_profile.get("materials", [])
+        }
+        profile_ids = [
+            int(item["target_material_id"])
+            for item in material_profile.get("materials", [])
+        ]
+        unique_profile_ids = len(profile_specs) == len(profile_ids)
+        material_domains_match = (
+            unique_profile_ids
+            and set(donor_materials) == set(candidate_materials) == set(profile_specs)
+        )
+        check(
+            "materials.profile_domains",
+            material_domains_match,
+            {
+                "donor": sorted(donor_materials),
+                "candidate": sorted(candidate_materials),
+                "profile": sorted(profile_specs),
+                "profile_ids_unique": unique_profile_ids,
+            },
+        )
+
+        materials_valid = material_domains_match
+        if material_domains_match:
+            for material_id_value, material in sorted(candidate_materials.items()):
+                spec = profile_specs[material_id_value]
+                donor_material = donor_materials[material_id_value]
+                metadata_equal = metadata_signature(donor_material) == metadata_signature(
+                    material
+                )
+                try:
+                    shader, atst, nested, mtpr = shader_info(material.data)
+                    nested_difference = first_difference(
+                        material.data, nested.rebuild_lossless()
+                    )
+                    texture_patches = normalize_patches(spec, "texture_patches")
+                    value_patches = normalize_patches(spec, "value_patches")
+                    repatched_mtpr, _changes, texture_hashes = patch_mtpr(
+                        mtpr.data,
+                        texture_patches,
+                        value_patches,
+                        require_all_textures=bool(
+                            spec.get("require_all_template_textures_patched", True)
+                        ),
+                    )
+                    profile_exact = repatched_mtpr == mtpr.data
+                    current_valid = (
+                        metadata_equal
+                        and nested_difference is None
+                        and shader == spec["expected_shader"]
+                        and atst == spec["expected_atst"]
+                        and profile_exact
+                    )
+                    evidence = {
+                        "material_id": material_id_value,
+                        "role": spec.get("role"),
+                        "metadata_equal": metadata_equal,
+                        "shader": shader,
+                        "expected_shader": spec["expected_shader"],
+                        "atst": atst,
+                        "expected_atst": spec["expected_atst"],
+                        "nested_roundtrip": nested_difference is None,
+                        "nested_first_different_offset": nested_difference,
+                        "profile_exact": profile_exact,
+                        "texture_hashes": [
+                            f"{item:08x}" for item in sorted(texture_hashes)
+                        ],
+                    }
+                except (BundleError, KeyError, ValueError) as exc:
+                    current_valid = False
+                    evidence = {
+                        "material_id": material_id_value,
+                        "role": spec.get("role"),
+                        "metadata_equal": metadata_equal,
+                        "error": str(exc),
+                    }
+                materials_valid &= current_valid
+                evidence["valid"] = current_valid
+                material_checks.append(evidence)
+        check("materials.nested_profile_roundtrip", materials_valid, material_checks)
 
     blob_spans = sorted(
         (int(blob["data_offset"]), int(blob["data_offset"]) + int(blob["data_size"]), blob["tag"], blob["index"])
@@ -240,12 +387,17 @@ def main() -> None:
     if args.component == "helmet" and manifest["geometry"].get("draw_policy") in {
         "helmet6_face_combined",
         "head6_display",
+        "head7_display",
     }:
         actual_render_passes = {int(mesh["material_id"]): int(mesh["render_pass"]) for mesh in meshes}
+        expected_render_passes = {
+            material_id: HEAD_DISPLAY_RENDER_PASSES[material_id]
+            for material_id in sorted(draws)
+        }
         check(
             "helmet.head_display_render_passes",
-            actual_render_passes == HEAD_DISPLAY_RENDER_PASSES,
-            {"actual": actual_render_passes, "expected": HEAD_DISPLAY_RENDER_PASSES},
+            actual_render_passes == expected_render_passes,
+            {"actual": actual_render_passes, "expected": expected_render_passes},
         )
 
     skin_summaries: list[dict] = []
@@ -347,11 +499,21 @@ def main() -> None:
 
     report = {
         "schema_version": 1,
-        "purpose": "Structural gate for an FBX-first FH6 Display modelbin candidate; no game-load claim.",
+        "purpose": (
+            "Structural and material-profile gate for an FBX-first FH6 Display "
+            "modelbin candidate; no game-load claim."
+            if material_profile is not None
+            else "Structural gate for an FBX-first FH6 Display modelbin candidate; no game-load claim."
+        ),
         "component": args.component,
         "donor": {"path": str(donor_path), "bytes": len(donor_data), "sha256": sha256(donor_path)},
         "candidate": {"path": str(candidate_path), "bytes": len(candidate_data), "sha256": sha256(candidate_path)},
         "manifest": {"path": str(manifest_path), "sha256": sha256(manifest_path)},
+        "material_profile": (
+            {"path": str(material_profile_path), "sha256": sha256(material_profile_path)}
+            if material_profile_path
+            else None
+        ),
         "summary": {"checks": len(checks), "passed": len(checks) - len(failures), "failed": len(failures), "hard_errors": failures},
         "checks": checks,
         "lod_observation": {

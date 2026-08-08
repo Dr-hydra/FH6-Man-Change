@@ -17,7 +17,12 @@ SCRIPTS = WORKSPACE / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from convert_fh6_swatchbin import parse_swatchbin  # noqa: E402
-from modelbin_bundle import parse_bundle  # noqa: E402
+from modelbin_bundle import (  # noqa: E402
+    blob_spec,
+    first_difference,
+    parse_bundle,
+    rebuild_with_blob_sequence,
+)
 from patch_fh6_material_profile import (  # noqa: E402
     materials_by_id,
     parameter_name_hash,
@@ -29,6 +34,8 @@ from scan_fh6_donor_leakage import scan_modelbin  # noqa: E402
 
 ARCHIVE = WORKSPACE / "work" / "si" / "materials-v006-eyes" / "characters.iris-v006.zip"
 CONVERTER = SCRIPTS / "convert_fh6_swatchbin.py"
+HEAD7_BUILDER = SCRIPTS / "build_fh6_head7_donor.py"
+VERIFY_CANDIDATE = SCRIPTS / "verify_fh6_modelbin_candidate.py"
 CLI = (
     WORKSPACE
     / "tools"
@@ -45,6 +52,145 @@ WHITE_ALPHA_64 = (
 
 
 class MaterialPipelineTests(unittest.TestCase):
+    def test_final_material_candidates_pass_nested_roundtrip_gate(self) -> None:
+        root = WORKSPACE / "work" / "si" / "fbx-source"
+        cases = (
+            (
+                "helmet",
+                root
+                / "milestone-05-modelbin-lod0-v002"
+                / "helmet"
+                / "Helmet_Race_Modern.lod0-head7.modelbin",
+                root
+                / "material-pipeline-v002"
+                / "candidates"
+                / "Helmet_Race_Modern.lod0-materials-v002.modelbin",
+                root
+                / "milestone-04-intermediate-v002"
+                / "lod0"
+                / "head-hair.intermediate.manifest.json",
+                root
+                / "material-pipeline-v002"
+                / "profiles"
+                / "helmet-final-lod0-v002.json",
+            ),
+            (
+                "outfit",
+                root
+                / "milestone-05-modelbin-lod0-v002"
+                / "outfit"
+                / "Outfit_Race_Suit_Modern_F.lod0-final.modelbin",
+                root
+                / "material-pipeline-v002"
+                / "candidates"
+                / "Outfit_Race_Suit_Modern_F.lod0-materials-v002.modelbin",
+                root
+                / "milestone-04-intermediate-v002"
+                / "lod0"
+                / "body-garment.intermediate.manifest.json",
+                root
+                / "material-pipeline-v002"
+                / "profiles"
+                / "outfit-final-lod0-v002.json",
+            ),
+        )
+        with tempfile.TemporaryDirectory(prefix="fh6-material-verify-test-") as temporary:
+            for component, geometry, candidate, manifest, profile in cases:
+                with self.subTest(component=component):
+                    report = Path(temporary) / f"{component}.json"
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            str(VERIFY_CANDIDATE),
+                            str(geometry),
+                            str(candidate),
+                            str(manifest),
+                            "--component",
+                            component,
+                            "--material-profile",
+                            str(profile),
+                            "--report",
+                            str(report),
+                        ],
+                        cwd=WORKSPACE,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    result = json.loads(report.read_text(encoding="utf-8"))
+                    checks = {item["name"]: item for item in result["checks"]}
+                    self.assertEqual(result["summary"]["failed"], 0)
+                    self.assertTrue(checks["bundle.lossless_roundtrip"]["passed"])
+                    self.assertTrue(
+                        checks["materials.nested_profile_roundtrip"]["passed"]
+                    )
+
+    def test_blob_sequence_writer_is_exact_without_sequence_changes(self) -> None:
+        donor = (
+            WORKSPACE
+            / "work"
+            / "si"
+            / "components"
+            / "baselines"
+            / "helmet"
+            / "extracted"
+            / "Helmet_Race_Modern.modelbin"
+        )
+        original = donor.read_bytes()
+        bundle = parse_bundle(original)
+        rebuilt = rebuild_with_blob_sequence(
+            bundle, [blob_spec(blob) for blob in bundle.blobs]
+        )
+        self.assertIsNone(first_difference(original, rebuilt))
+
+    def test_head7_structural_donor_adds_sclera_mesh_and_material(self) -> None:
+        helmet = (
+            WORKSPACE
+            / "work"
+            / "si"
+            / "components"
+            / "baselines"
+            / "helmet"
+            / "extracted"
+            / "Helmet_Race_Modern.modelbin"
+        )
+        alice = (
+            WORKSPACE
+            / "work"
+            / "si"
+            / "components"
+            / "baselines"
+            / "head-alice-f"
+            / "extracted"
+            / "Driver_Alice_F.modelbin"
+        )
+        with tempfile.TemporaryDirectory(prefix="fh6-head7-test-") as temporary:
+            root = Path(temporary)
+            output = root / "Helmet_Race_Modern.head7.modelbin"
+            report = root / "report.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(HEAD7_BUILDER),
+                    str(helmet),
+                    str(alice),
+                    str(output),
+                    "--report",
+                    str(report),
+                ],
+                cwd=WORKSPACE,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            result = json.loads(report.read_text(encoding="utf-8"))
+            bundle = parse_bundle(output.read_bytes())
+            materials = materials_by_id(bundle)
+            shader, atst, _nested, _mtpr = shader_info(materials[6].data)
+            self.assertEqual(result["validation"]["mesh_count"], 7)
+            self.assertEqual(result["validation"]["material_count"], 7)
+            self.assertEqual((shader, atst), ("charactereyeball", "0000"))
+
     def test_parameter_name_crc32_contract(self) -> None:
         self.assertEqual(parameter_name_hash("DiffuseTexture"), 0xEE34B08B)
         self.assertEqual(parameter_name_hash("MainNormalsTexture"), 0x17833B17)
@@ -162,6 +308,37 @@ class MaterialPipelineTests(unittest.TestCase):
                 {},
                 require_all_textures=True,
             )
+
+    def test_retail_alpha_cloth_template_has_only_explicit_source_slots(self) -> None:
+        donor = (
+            WORKSPACE
+            / "work"
+            / "si"
+            / "fbx-source"
+            / "material-donors-v001"
+            / "Lower_Jean_Shorts_Ripped_F"
+            / "extracted"
+            / "Lower_Jean_Shorts_Ripped_F.modelbin"
+        )
+        material = materials_by_id(parse_bundle(donor.read_bytes()))[3]
+        shader, atst, _nested, mtpr = shader_info(material.data)
+        _patched, _changes, texture_hashes = patch_mtpr(
+            mtpr.data,
+            {
+                0xEE34B08B: r"Game:\Media\_library\texturespg\characters\swatches\si_alpha_diff.swatchbin",
+                0x17833B17: r"Game:\Media\_library\texturespg\characters\swatches\si_alpha_nrml.swatchbin",
+            },
+            {
+                0x64490D74: {
+                    "name": "FuzzAmount_floatVal",
+                    "type": 2,
+                    "value": 0.0,
+                }
+            },
+            require_all_textures=True,
+        )
+        self.assertEqual((shader, atst), ("uber_clothing_transparancy", "0100"))
+        self.assertEqual(texture_hashes, {0xEE34B08B, 0x17833B17})
 
     def test_leakage_scan_detects_current_racesuit_donor_paths(self) -> None:
         candidate = (

@@ -40,6 +40,7 @@ FACE_COMBINED_RENDER_PASSES = {
     3: 0x19,  # Neck
     4: 0x38,  # Eyelashes
     5: 0x3C,  # Hair shadow
+    6: 0x19,  # Sclera
 }
 
 
@@ -159,8 +160,8 @@ def main() -> None:
             raise ValueError(f"Expected {count} {tag} blobs, found {len(tag_indices.get(tag, []))}: {tags}")
     mesh_blob_indices = tag_indices.get("Mesh", [])
     meshes = parsed["meshes"]
-    if len(meshes) != 6 or len(meshes) != len(mesh_blob_indices):
-        raise ValueError("Helmet donor must contain six Mesh 1.12 descriptors")
+    if len(meshes) not in (6, 7) or len(meshes) != len(mesh_blob_indices):
+        raise ValueError("Helmet donor must contain six or seven Mesh 1.12 descriptors")
     if any(mesh["blob_version"] != "1.12" for mesh in meshes):
         raise ValueError("Helmet donor Mesh descriptors must be version 1.12")
 
@@ -171,9 +172,11 @@ def main() -> None:
 
     source_draws = manifest["geometry"]["draws"]
     draw_by_material = {int(draw["material_id"]): draw for draw in source_draws}
-    if set(draw_by_material) != {0, 1, 2, 3, 4, 5}:
-        raise ValueError("Helmet intermediate must contain material draws 0..5")
+    if len(draw_by_material) != len(source_draws):
+        raise ValueError("Helmet intermediate contains duplicate material draw IDs")
     layout_by_material = {int(mesh["material_id"]): int(mesh["vertex_layout_id"]) for mesh in meshes}
+    if len(layout_by_material) != len(meshes):
+        raise ValueError("Helmet donor contains duplicate material Mesh IDs")
     if set(layout_by_material) != set(draw_by_material):
         raise ValueError("Helmet donor and intermediate material domains differ")
     for material_id, layout_id in layout_by_material.items():
@@ -346,7 +349,11 @@ def main() -> None:
             translate=list(draw_quantization["translate"]),
             position_offset=0 if layout_id == 1 else layout1_count * 8,
         )
-        if manifest["geometry"].get("draw_policy") in {"helmet6_face_combined", "head6_display"}:
+        if manifest["geometry"].get("draw_policy") in {
+            "helmet6_face_combined",
+            "head6_display",
+            "head7_display",
+        }:
             patched_mesh = bytearray(patched_mesh)
             struct.pack_into("<H", patched_mesh, 14, FACE_COMBINED_RENDER_PASSES[material_id])
             patched_mesh = bytes(patched_mesh)
@@ -397,7 +404,7 @@ def main() -> None:
 
     report = {
         "schema_version": 1,
-        "purpose": "Structural FH6 helmet component candidate with donor vertex layouts/materials retained; not yet game validated.",
+        "purpose": "Structural FH6 Helmet head component candidate with donor layouts/material slots retained; not yet game validated.",
         "donor": {"path": str(donor), "sha256": sha256(donor), "bytes": len(donor_data)},
         "intermediate": {"manifest": str(manifest_path), "manifest_sha256": sha256(manifest_path), "vertices": len(source_vertices), "indices": len(index_payload_values), "triangles": len(index_payload_values) // 3},
         "candidate": {
@@ -408,7 +415,7 @@ def main() -> None:
         "quantization": quantization,
         "layout_domains": {"layout1": {"materials": [m for m, v in layout_by_material.items() if v == 1], "vertices": layout1_count, "attribute_stride": 20, "skin_stride": 16}, "layout0": {"materials": [m for m, v in layout_by_material.items() if v == 0], "vertices": layout0_count, "attribute_stride": 40, "skin_stride": 16}},
         "preserved_blobs": preservation,
-        "policies": {"skeleton": "donor Skel retained byte-exact", "materials": "donor MatI retained byte-exact", "layouts": "donor VLay retained byte-exact; per-mesh layout IDs and buffer bindings retained", "mesh_order": "index and vertex domains rebuilt in donor Mesh blob order", "skinning": "source four-influence weights retained; both donor Skin streams expanded to stride 16 and Mesh skinning_elements=4", "render_pass": "for helmet6_face_combined/head6_display, face/eyes/neck use 0x19, hair/eyelashes use 0x38, and hair shadow uses 0x3C", "lod": "all donor LOD flags retained; first candidate shares the full-resolution domain"},
+        "policies": {"skeleton": "donor Skel retained byte-exact", "materials": "donor MatI retained byte-exact", "layouts": "donor VLay retained byte-exact; per-mesh layout IDs and buffer bindings retained", "mesh_order": "index and vertex domains rebuilt in donor Mesh blob order", "skinning": "source four-influence weights retained; both donor Skin streams expanded to stride 16 and Mesh skinning_elements=4", "render_pass": "head display face/eyes/sclera use 0x19, hair/eyelashes use 0x38, and hair shadow uses 0x3C", "lod": "all donor LOD flags retained; first candidate shares the full-resolution domain"},
         "validation_level": {"structural": True, "blender_visual": False, "offline_game": False},
         "license_guard": "Local technical validation only; do not redistribute this candidate.",
     }

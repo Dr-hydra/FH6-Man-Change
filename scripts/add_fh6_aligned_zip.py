@@ -24,6 +24,7 @@ from rebuild_fh6_aligned_zip import (  # noqa: E402
     extra_fields,
     read_entries,
     read_eocd,
+    verify,
 )
 
 
@@ -179,10 +180,14 @@ def build(source: Path, output: Path, additions: dict[str, Path]) -> dict:
         for name, path in additions.items():
             if archive.read(name) != path.read_bytes():
                 raise ValueError(f"Added payload mismatch: {name}")
+    alignment_validation = verify(
+        output, additions, len(entries) + len(new_entries)
+    )
     return {
         "entries_before": len(entries),
         "entries_after": len(entries) + len(new_entries),
         "additions": [item[-1] for item in new_entries],
+        "archive": alignment_validation,
         "output_sha256": sha256_file(output),
     }
 
