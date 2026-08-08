@@ -11,6 +11,7 @@ to the Body/Garment export mesh as the existing skin material.
 from __future__ import annotations
 
 import argparse
+import bmesh
 import hashlib
 import json
 import math
@@ -35,7 +36,9 @@ SKIN_MATERIAL = "肌"
 MAX_INFLUENCES = 4
 MIN_WEIGHT = 0.001
 NECK_COLUMNS = 48
-NECK_ROWS = 8
+NECK_FRONT_COLUMNS = 32
+NECK_ROWS = 4
+CENTER_SEAM_EPSILON = 2.0e-5
 
 
 def arguments() -> argparse.Namespace:
@@ -347,7 +350,10 @@ def transfer_skin_weights(
     }
 
 
-def material_boundary_components(obj: bpy.types.Object, material_name: str) -> list[set[int]]:
+def material_boundary_components_with_edges(
+    obj: bpy.types.Object,
+    material_name: str,
+) -> list[tuple[set[int], set[tuple[int, int]]]]:
     slot = material_slot(obj, material_name)
     edge_counts: Counter[tuple[int, int]] = Counter()
     for polygon in obj.data.polygons:
@@ -362,7 +368,8 @@ def material_boundary_components(obj: bpy.types.Object, material_name: str) -> l
             continue
         adjacency[first].add(second)
         adjacency[second].add(first)
-    components: list[set[int]] = []
+    boundary_edges = {edge for edge, count in edge_counts.items() if count == 1}
+    components: list[tuple[set[int], set[tuple[int, int]]]] = []
     remaining = set(adjacency)
     while remaining:
         root = min(remaining)
@@ -375,60 +382,272 @@ def material_boundary_components(obj: bpy.types.Object, material_name: str) -> l
             component.add(current)
             queue.extend(adjacency[current] - component)
         remaining -= component
-        components.append(component)
-    return sorted(components, key=lambda item: (-len(item), min(item)))
+        component_edges = {edge for edge in boundary_edges if edge[0] in component and edge[1] in component}
+        components.append((component, component_edges))
+    return sorted(components, key=lambda item: (-len(item[0]), min(item[0])))
 
 
-def resample_curve(points: list[Vector], count: int) -> list[Vector]:
-    if len(points) < 2:
-        raise RuntimeError("A bridge curve requires at least two points")
-    deduplicated = [points[0]]
-    for point in points[1:]:
-        if (point - deduplicated[-1]).length > 1.0e-6:
-            deduplicated.append(point)
+def material_boundary_components(obj: bpy.types.Object, material_name: str) -> list[set[int]]:
+    return [vertices for vertices, _edges in material_boundary_components_with_edges(obj, material_name)]
+
+
+def ordered_boundary_loop(vertices: set[int], edges: set[tuple[int, int]]) -> tuple[list[int], bool]:
+    adjacency: dict[int, set[int]] = defaultdict(set)
+    for first, second in edges:
+        adjacency[first].add(second)
+        adjacency[second].add(first)
+    if not vertices or any(len(adjacency[index]) > 2 for index in vertices):
+        return sorted(vertices), False
+    endpoints = sorted(index for index in vertices if len(adjacency[index]) == 1)
+    closed = not endpoints and all(len(adjacency[index]) == 2 for index in vertices)
+    start = endpoints[0] if endpoints else min(vertices)
+    ordered = [start]
+    previous: int | None = None
+    current = start
+    while True:
+        choices = sorted(adjacency[current] - ({previous} if previous is not None else set()))
+        if not choices:
+            break
+        next_index = choices[0]
+        if closed and next_index == start:
+            break
+        if next_index in ordered:
+            return sorted(vertices), False
+        ordered.append(next_index)
+        previous, current = current, next_index
+        if len(ordered) == len(vertices):
+            break
+    return (ordered if len(ordered) == len(vertices) else sorted(vertices)), closed
+
+
+def boundary_edge_counts(obj: bpy.types.Object) -> Counter[tuple[int, int]]:
+    counts: Counter[tuple[int, int]] = Counter()
+    for polygon in obj.data.polygons:
+        vertices = list(polygon.vertices)
+        for first, second in zip(vertices, vertices[1:] + vertices[:1]):
+            counts[tuple(sorted((first, second)))] += 1
+    return counts
+
+
+def weld_neck_centerline(body: bpy.types.Object) -> tuple[list[int], dict[str, object]]:
+    """Weld only the coincident centerline vertices of the two native neck halves."""
+    material_components = material_boundary_components_with_edges(body, SKIN_MATERIAL)
+    coordinates = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
+    candidates: list[set[int]] = []
+    for vertices, _edges in material_components:
+        points = [coordinates[index] for index in vertices]
+        minimum = Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points)))
+        maximum = Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points)))
+        if (
+            30 <= len(vertices) <= 50
+            and 1.49 <= minimum.z <= 1.55
+            and 1.62 <= maximum.z <= 1.68
+            and 0.045 <= maximum.x - minimum.x <= 0.065
+            and maximum.y - minimum.y >= 0.070
+        ):
+            candidates.append(vertices)
+    if len(candidates) != 2:
+        raise RuntimeError(f"Expected two native neck half-shell boundaries, found {len(candidates)}")
+    selected = {
+        index
+        for component in candidates
+        for index in component
+        if abs(coordinates[index].x) <= CENTER_SEAM_EPSILON
+    }
+    before_vertices = len(body.data.vertices)
+    mesh = bmesh.new()
+    mesh.from_mesh(body.data)
+    mesh.verts.ensure_lookup_table()
+    bmesh.ops.remove_doubles(
+        mesh,
+        verts=[mesh.verts[index] for index in sorted(selected)],
+        dist=CENTER_SEAM_EPSILON,
+    )
+    mesh.to_mesh(body.data)
+    mesh.free()
+    body.data.update()
+
+    all_edges = boundary_edge_counts(body)
+    material_components = material_boundary_components_with_edges(body, SKIN_MATERIAL)
+    ring_candidates: list[tuple[set[int], set[tuple[int, int]]]] = []
+    for vertices, edges in material_components:
+        points = [body.matrix_world @ body.data.vertices[index].co for index in vertices]
+        minimum = Vector((min(point.x for point in points), min(point.y for point in points), min(point.z for point in points)))
+        maximum = Vector((max(point.x for point in points), max(point.y for point in points), max(point.z for point in points)))
+        centroid_x = sum(point.x for point in points) / len(points)
+        if (
+            30 <= len(vertices) <= 50
+            and 1.50 <= minimum.z <= 1.58
+            and 1.62 <= maximum.z <= 1.68
+            and 0.09 <= maximum.x - minimum.x <= 0.12
+            and 0.07 <= maximum.y - minimum.y <= 0.11
+            and abs(centroid_x) <= 0.01
+            and all(all_edges[edge] == 1 for edge in edges)
+        ):
+            ring_candidates.append((vertices, edges))
+    if len(ring_candidates) != 1:
+        raise RuntimeError(f"Expected one welded neck opening ring, found {len(ring_candidates)}")
+    ring_vertices, ring_edges = ring_candidates[0]
+    ordered, closed = ordered_boundary_loop(ring_vertices, ring_edges)
+    if not closed or len(ordered) < 24:
+        raise RuntimeError("Welded neck opening is not a single closed boundary loop")
+    report = {
+        "half_shell_components": len(candidates),
+        "selected_center_vertices": len(selected),
+        "merged_vertices": before_vertices - len(body.data.vertices),
+        "ring_vertices": len(ordered),
+        "ring_edges": len(ring_edges),
+        "ring_closed": closed,
+        "ring_bounds_min_m": [
+            round(float(min((body.matrix_world @ body.data.vertices[index].co)[axis] for index in ordered)), 9)
+            for axis in range(3)
+        ],
+        "ring_bounds_max_m": [
+            round(float(max((body.matrix_world @ body.data.vertices[index].co)[axis] for index in ordered)), 9)
+            for axis in range(3)
+        ],
+    }
+    return ordered, report
+
+
+def blend_weight_maps(first: dict[str, float], second: dict[str, float], factor: float) -> dict[str, float]:
+    combined: dict[str, float] = defaultdict(float)
+    for name, weight in first.items():
+        combined[name] += weight * (1.0 - factor)
+    for name, weight in second.items():
+        combined[name] += weight * factor
+    return clean_weights(dict(combined))
+
+
+def canonical_face_bridge_weights(weights: dict[str, float], allowed: set[str]) -> dict[str, float]:
+    """Collapse facial side/detail bones to the driven neck/head chain.
+
+    The two donor armatures contain ear and dense cheek bones at slightly
+    different rest pivots.  Carrying those groups onto a cross-component neck
+    bridge creates a visible split when Head/Neck are posed independently.
+    Jaw remains a real donor bone; all ear/detail groups are folded into Head.
+    """
+    combined: dict[str, float] = defaultdict(float)
+    for name, weight in weights.items():
+        if name in {"L_Ear", "R_Ear"} or "Ear" in name:
+            destination = "Head"
+        elif "Cheek" in name or "Jaw" in name:
+            destination = "Jaw" if "Jaw" in allowed else "Head"
+        elif name in {"Head", "Neck", "Neck1", "Spine", "Spine1", "Spine2"}:
+            destination = name
+        else:
+            destination = "Head"
+        if destination in allowed:
+            combined[destination] += weight
+    return clean_weights(dict(combined))
+
+
+def resample_samples(samples: list[dict[str, object]], count: int) -> list[dict[str, object]]:
+    if len(samples) < 2:
+        raise RuntimeError("A bridge curve requires at least two samples")
+    deduplicated = [samples[0]]
+    for sample in samples[1:]:
+        if (sample["point"] - deduplicated[-1]["point"]).length > 1.0e-6:
+            deduplicated.append(sample)
     lengths = [0.0]
     for first, second in zip(deduplicated, deduplicated[1:]):
-        lengths.append(lengths[-1] + (second - first).length)
+        lengths.append(lengths[-1] + (second["point"] - first["point"]).length)
     if lengths[-1] <= 1.0e-6:
         raise RuntimeError("Bridge curve has zero arc length")
-    output: list[Vector] = []
+    output: list[dict[str, object]] = []
     segment = 0
-    for sample in range(count):
-        target = lengths[-1] * sample / (count - 1)
+    for sample_index in range(count):
+        target = lengths[-1] * sample_index / (count - 1)
         while segment + 1 < len(lengths) - 1 and lengths[segment + 1] < target:
             segment += 1
         start = lengths[segment]
         end = lengths[segment + 1]
         factor = (target - start) / max(end - start, 1.0e-9)
-        output.append(deduplicated[segment].lerp(deduplicated[segment + 1], factor))
+        first = deduplicated[segment]
+        second = deduplicated[segment + 1]
+        normal = first["normal"].lerp(second["normal"], factor)
+        output.append(
+            {
+                "point": first["point"].lerp(second["point"], factor),
+                "normal": normal.normalized() if normal.length > 1.0e-8 else first["normal"].copy(),
+                "weights": blend_weight_maps(first["weights"], second["weights"], factor),
+            }
+        )
     return output
 
 
-def lower_jaw_curve(head: bpy.types.Object) -> tuple[list[Vector], dict[str, object]]:
+def longest_true_run(flags: list[bool]) -> list[int]:
+    if not any(flags):
+        return []
+    if all(flags):
+        return list(range(len(flags)))
+    runs: list[list[int]] = []
+    for start, flag in enumerate(flags):
+        if not flag or flags[(start - 1) % len(flags)]:
+            continue
+        current: list[int] = []
+        index = start
+        while flags[index] and len(current) < len(flags):
+            current.append(index)
+            index = (index + 1) % len(flags)
+        runs.append(current)
+    return max(runs, key=len)
+
+
+def lower_jaw_curve(head: bpy.types.Object) -> tuple[list[dict[str, object]], dict[str, object]]:
     coordinates = [head.matrix_world @ vertex.co for vertex in head.data.vertices]
-    candidates: list[tuple[set[int], list[Vector]]] = []
-    for component in material_boundary_components(head, "面"):
+    normal_matrix = head.matrix_world.to_3x3().inverted().transposed()
+    candidates: list[tuple[set[int], set[tuple[int, int]]]] = []
+    for component, edges in material_boundary_components_with_edges(head, "面"):
         points = [coordinates[index] for index in component]
         xs = [point.x for point in points]
         zs = [point.z for point in points]
         if len(points) >= 50 and max(xs) - min(xs) >= 0.09 and min(zs) <= 1.61 and max(zs) >= 1.68:
-            candidates.append((component, points))
+            candidates.append((component, edges))
     if not candidates:
         raise RuntimeError("Could not identify the outer face boundary for the neck bridge")
-    component, points = min(candidates, key=lambda item: min(point.z for point in item[1]))
+    component, edges = min(candidates, key=lambda item: min(coordinates[index].z for index in item[0]))
+    ordered, closed = ordered_boundary_loop(component, edges)
+    if not closed:
+        raise RuntimeError("The outer face boundary is not a closed loop")
+    points = [coordinates[index] for index in ordered]
     minimum_z = min(point.z for point in points)
-    jaw = [point for point in points if point.z <= minimum_z + 0.052 and point.y >= 0.030]
-    jaw.sort(key=lambda point: (point.x, point.z, point.y))
-    sampled = resample_curve(jaw, NECK_COLUMNS)
-    return sampled, {
+    flags = [point.z <= minimum_z + 0.052 and point.y >= 0.030 for point in points]
+    run = longest_true_run(flags)
+    if len(run) < 8:
+        raise RuntimeError("Could not isolate a contiguous lower-jaw boundary arc")
+    jaw_indices = [ordered[index] for index in run]
+    jaw = [
+        {
+            "point": coordinates[index].copy(),
+            "normal": (normal_matrix @ head.data.vertices[index].normal).normalized(),
+            "weights": clean_weights(weight_dict(head, index)),
+        }
+        for index in jaw_indices
+    ]
+    if jaw[0]["point"].x > jaw[-1]["point"].x:
+        jaw.reverse()
+    return jaw, {
         "component_vertices": len(component),
         "jaw_vertices": len(jaw),
-        "bounds_min_m": [round(min(point[axis] for point in jaw), 9) for axis in range(3)],
-        "bounds_max_m": [round(max(point[axis] for point in jaw), 9) for axis in range(3)],
+        "closed_source_boundary": closed,
+        "bounds_min_m": [round(min(sample["point"][axis] for sample in jaw), 9) for axis in range(3)],
+        "bounds_max_m": [round(max(sample["point"][axis] for sample in jaw), 9) for axis in range(3)],
     }
 
 
 def body_skin_surface(body: bpy.types.Object) -> tuple[BVHTree, list[Vector], list[tuple[int, int, int]]]:
+    required_groups = {
+        name
+        for row in row_samples[1:]
+        for sample in row
+        for name in sample["weights"]
+        if name in allowed_bones
+    }
+    for name in sorted(required_groups):
+        if body.vertex_groups.get(name) is None:
+            body.vertex_groups.new(name=name)
+
     slot = material_slot(body, SKIN_MATERIAL)
     coordinates = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
     triangles: list[tuple[int, int, int]] = []
@@ -441,158 +660,321 @@ def body_skin_surface(body: bpy.types.Object) -> tuple[BVHTree, list[Vector], li
     return BVHTree.FromPolygons(coordinates, triangles, all_triangles=True), coordinates, triangles
 
 
-def add_neck_bridge(body: bpy.types.Object, armature: bpy.types.Object, head: bpy.types.Object) -> dict[str, object]:
-    jaw, jaw_report = lower_jaw_curve(head)
-    jaw_by_x = sorted(jaw, key=lambda point: point.x)
+def resample_closed_samples(samples: list[dict[str, object]], count: int) -> list[dict[str, object]]:
+    if len(samples) < 3:
+        raise RuntimeError("A closed bridge ring requires at least three samples")
+    lengths = [0.0]
+    for index, first in enumerate(samples):
+        second = samples[(index + 1) % len(samples)]
+        lengths.append(lengths[-1] + (second["point"] - first["point"]).length)
+    total = lengths[-1]
+    if total <= 1.0e-6:
+        raise RuntimeError("Closed neck ring has zero arc length")
+    output: list[dict[str, object]] = []
+    segment = 0
+    for sample_index in range(count):
+        target = total * sample_index / count
+        while segment + 1 < len(lengths) and lengths[segment + 1] < target:
+            segment += 1
+        first_index = segment % len(samples)
+        second_index = (first_index + 1) % len(samples)
+        start = lengths[segment]
+        end = lengths[segment + 1]
+        factor = (target - start) / max(end - start, 1.0e-9)
+        first = samples[first_index]
+        second = samples[second_index]
+        normal = first["normal"].lerp(second["normal"], factor)
+        output.append(
+            {
+                "point": first["point"].lerp(second["point"], factor),
+                "normal": normal.normalized() if normal.length > 1.0e-8 else first["normal"].copy(),
+                "weights": blend_weight_maps(first["weights"], second["weights"], factor),
+            }
+        )
+    return output
 
-    def jaw_at_x(value: float) -> Vector:
-        if value <= jaw_by_x[0].x:
-            return jaw_by_x[0].copy()
-        if value >= jaw_by_x[-1].x:
-            return jaw_by_x[-1].copy()
-        for first, second in zip(jaw_by_x, jaw_by_x[1:]):
-            if first.x <= value <= second.x:
-                factor = (value - first.x) / max(second.x - first.x, 1.0e-9)
-                return first.lerp(second, factor)
-        return jaw_by_x[-1].copy()
 
-    # A closed upper ring keeps the side/back neck under the hair filled as
-    # well as the visible throat.  The front half follows the measured jaw;
-    # the back half is deliberately tucked under the hair volume.
-    jaw_radius_x = max(abs(point.x) for point in jaw) * 1.10
-    center_y = 0.034
-    back_y = -0.020
-    top_ring: list[Vector] = []
-    for column in range(NECK_COLUMNS):
-        theta = 2.0 * math.pi * column / NECK_COLUMNS
-        x = jaw_radius_x * math.cos(theta)
-        if math.sin(theta) >= -0.02:
-            point = jaw_at_x(x)
-            # Gently extend the jaw endpoints to the wider side ring.
-            point.x = x
-            top = point
+def align_closed_samples(
+    samples: list[dict[str, object]],
+    target: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object]]:
+    best: tuple[float, bool, int, list[dict[str, object]], list[dict[str, object]]] | None = None
+    for reversed_order in (False, True):
+        oriented = list(reversed(samples)) if reversed_order else list(samples)
+        for shift in range(len(oriented)):
+            ordered = oriented[shift:] + oriented[:shift]
+            resampled = resample_closed_samples(ordered, len(target))
+            distances = [
+                (sample["point"] - target_sample["point"]).length
+                for sample, target_sample in zip(resampled, target)
+            ]
+            score = sum(distance * distance for distance in distances) / len(distances)
+            candidate = (score, reversed_order, shift, ordered, resampled)
+            if best is None or candidate[:3] < best[:3]:
+                best = candidate
+    if best is None:
+        raise RuntimeError("Could not align the native neck boundary to the face ring")
+    score, reversed_order, shift, ordered, resampled = best
+    distances = [
+        (sample["point"] - target_sample["point"]).length
+        for sample, target_sample in zip(resampled, target)
+    ]
+    return ordered, resampled, {
+        "reversed": reversed_order,
+        "cyclic_shift": shift,
+        "rms_distance_mm": round(math.sqrt(score) * 1000.0, 6),
+        "min_distance_mm": round(min(distances) * 1000.0, 6),
+        "p95_distance_mm": round(float(percentile(distances, 0.95)) * 1000.0, 6),
+        "max_distance_mm": round(max(distances) * 1000.0, 6),
+    }
+
+
+def zipper_faces(first: list[bmesh.types.BMVert], second: list[bmesh.types.BMVert]) -> list[tuple[bmesh.types.BMVert, bmesh.types.BMVert, bmesh.types.BMVert]]:
+    """Triangulate a closed ring pair with different vertex counts."""
+    faces: list[tuple[bmesh.types.BMVert, bmesh.types.BMVert, bmesh.types.BMVert]] = []
+    first_index = 0
+    second_index = 0
+    while first_index < len(first) or second_index < len(second):
+        first_next = (first_index + 1) / len(first) if first_index < len(first) else math.inf
+        second_next = (second_index + 1) / len(second) if second_index < len(second) else math.inf
+        first_current = first[first_index % len(first)]
+        second_current = second[second_index % len(second)]
+        if second_next <= first_next:
+            second_after = second[(second_index + 1) % len(second)]
+            faces.append((first_current, second_current, second_after))
+            second_index += 1
         else:
-            top = Vector((x, back_y + 0.040 * math.sin(theta), 1.638))
-        top_ring.append(top)
+            first_after = first[(first_index + 1) % len(first)]
+            faces.append((first_current, second_current, first_after))
+            first_index += 1
+    return faces
 
-    skin_bvh, body_coordinates, _triangles = body_skin_surface(body)
-    skin_ids = material_vertices(body, SKIN_MATERIAL)
-    skin_tree = KDTree(len(skin_ids))
-    for index in skin_ids:
-        skin_tree.insert(body_coordinates[index], index)
-    skin_tree.balance()
-    lower: list[Vector] = []
-    lower_indices: list[int] = []
-    gaps: list[float] = []
-    for point in top_ring:
-        nearest, normal, _polygon, distance = skin_bvh.find_nearest(point)
-        if nearest is None or distance is None:
-            raise RuntimeError("Could not project the neck ring to the body skin")
-        direction = (point - nearest).normalized() if distance > 1.0e-8 else Vector((0.0, 1.0, 0.0))
-        # Deliberately overlap the existing body surface so the separate FH6
-        # component draw cannot expose a dark slit at the lower edge.
-        lower_point = nearest - direction * 0.0050
-        lower.append(lower_point)
-        _co, nearest_index, _nearest_distance = skin_tree.find(nearest)
-        lower_indices.append(nearest_index)
-        gaps.append(float(distance))
-    # Smooth the body projection while preserving the ring's overall shape.
-    for _iteration in range(3):
-        lower = [
-            lower[(column - 1) % NECK_COLUMNS].lerp(lower[(column + 1) % NECK_COLUMNS], 0.5)
-            for column in range(NECK_COLUMNS)
-        ]
 
-    inverse_world = body.matrix_world.inverted()
-    vertices: list[tuple[float, float, float]] = []
-    vertex_weights: list[dict[str, float]] = []
+def add_neck_bridge(body: bpy.types.Object, armature: bpy.types.Object, head: bpy.types.Object) -> dict[str, object]:
+    bottom_indices, weld_report = weld_neck_centerline(body)
+    jaw, jaw_report = lower_jaw_curve(head)
     allowed_bones = {bone.name for bone in armature.data.bones}
-    for row in range(NECK_ROWS):
-        factor = row / (NECK_ROWS - 1)
+    body_normal_matrix = body.matrix_world.to_3x3().inverted().transposed()
+    inverse_world = body.matrix_world.inverted()
+
+    bottom_samples = []
+    for index in bottom_indices:
+        world_point = body.matrix_world @ body.data.vertices[index].co
+        normal = (body_normal_matrix @ body.data.vertices[index].normal).normalized()
+        bottom_samples.append(
+            {
+                "point": world_point,
+                "normal": normal,
+                "weights": clean_weights(weight_dict(body, index, allowed_bones)),
+                "source_index": index,
+            }
+        )
+    jaw = [
+        {
+            **sample,
+            "weights": canonical_face_bridge_weights(sample["weights"], allowed_bones),
+        }
+        for sample in jaw
+    ]
+    front = resample_samples(jaw, NECK_FRONT_COLUMNS)
+    if front[0]["point"].x > front[-1]["point"].x:
+        front.reverse()
+    left = front[0]
+    right = front[-1]
+    back_count = NECK_COLUMNS - NECK_FRONT_COLUMNS
+    side_y = (left["point"].y + right["point"].y) * 0.5
+    back_depth = max(0.075, abs(left["point"].y - right["point"].y) + 0.055)
+    top_ring = list(front)
+    for index in range(1, back_count + 1):
+        factor = index / (back_count + 1)
+        theta = math.pi * factor
+        x = (left["point"].x + right["point"].x) * 0.5 + (right["point"].x - left["point"].x) * 0.5 * math.cos(theta)
+        y = side_y - back_depth * math.sin(theta)
+        z = right["point"].z * (1.0 - factor) + left["point"].z * factor
+        normal = Vector((x, y - side_y, 0.0))
+        if normal.length <= 1.0e-8:
+            normal = Vector((0.0, -1.0, 0.0))
+        top_ring.append(
+            {
+                "point": Vector((x, y, z)),
+                "normal": normal.normalized(),
+                "weights": blend_weight_maps(right["weights"], left["weights"], factor),
+            }
+        )
+    top_ring = [
+        {
+            **sample,
+            "weights": clean_weights(sample["weights"], limit=MAX_INFLUENCES),
+        }
+        for sample in top_ring
+    ]
+    bottom_samples, bottom_resampled, alignment_report = align_closed_samples(bottom_samples, top_ring)
+    bottom_indices = [int(sample["source_index"]) for sample in bottom_samples]
+
+    row_factors = (1.0 / 3.0, 2.0 / 3.0, 1.0)
+    row_samples: list[list[dict[str, object]]] = [bottom_resampled]
+    for factor in row_factors:
         smooth = factor * factor * (3.0 - 2.0 * factor)
-        for column in range(NECK_COLUMNS):
-            point = lower[column].lerp(top_ring[column], smooth)
-            if row == NECK_ROWS - 1:
-                center = Vector((0.0, 0.040, 1.625))
-                inward = center - point
-                if inward.length > 1.0e-8:
-                    point += inward.normalized() * 0.0008
-            vertices.append(tuple(inverse_world @ point))
-            base = clean_weights(weight_dict(body, lower_indices[column], allowed_bones))
-            if row == 0:
-                weights = base
-            elif row == 1:
-                weights = blend_weights(base, {"Neck1": 1.0}, 0.35)
-            elif row == 2:
-                weighted_base = {name: weight * 0.25 for name, weight in base.items()}
-                weighted_base["Neck1"] = weighted_base.get("Neck1", 0.0) + 0.50
-                weighted_base["Head"] = weighted_base.get("Head", 0.0) + 0.25
-                weights = clean_weights(weighted_base)
-            else:
-                weights = {"Neck1": 0.20, "Head": 0.80}
-            vertex_weights.append(clean_weights(weights))
+        row_samples.append(
+            [
+                {
+                    "point": bottom["point"].lerp(top["point"], factor),
+                    "normal": bottom["normal"].lerp(top["normal"], smooth).normalized(),
+                    "weights": blend_weight_maps(bottom["weights"], top["weights"], smooth),
+                }
+                for bottom, top in zip(bottom_resampled, top_ring)
+            ]
+        )
 
-    faces: list[tuple[int, int, int]] = []
-    for row in range(NECK_ROWS - 1):
-        for column in range(NECK_COLUMNS):
-            next_column = (column + 1) % NECK_COLUMNS
-            lower_left = row * NECK_COLUMNS + column
-            lower_right = row * NECK_COLUMNS + next_column
-            upper_left = lower_left + NECK_COLUMNS
-            upper_right = (row + 1) * NECK_COLUMNS + next_column
-            faces.append((lower_left, lower_right, upper_right))
-            faces.append((lower_left, upper_right, upper_left))
-    mesh_data = bpy.data.meshes.new("Si_Neck_Bridge_LOD0_Mesh")
-    mesh_data.from_pydata(vertices, [], faces)
-    mesh_data.materials.append(bpy.data.materials[SKIN_MATERIAL])
-    uv_layer = mesh_data.uv_layers.new(name="UVMap")
-    for polygon in mesh_data.polygons:
-        polygon.material_index = 0
-        polygon.use_smooth = True
-        for loop_index in polygon.loop_indices:
-            vertex_index = mesh_data.loops[loop_index].vertex_index
-            row, column = divmod(vertex_index, NECK_COLUMNS)
-            uv_layer.data[loop_index].uv = (column / NECK_COLUMNS, row / (NECK_ROWS - 1))
-    patch = bpy.data.objects.new("Si_Neck_Bridge_LOD0", mesh_data)
-    bpy.context.scene.collection.objects.link(patch)
-    patch.matrix_world = body.matrix_world.copy()
-    for vertex_index, weights in enumerate(vertex_weights):
-        for name, weight in weights.items():
-            group = patch.vertex_groups.get(name) or patch.vertex_groups.new(name=name)
-            group.add([vertex_index], weight, "REPLACE")
-    modifier = patch.modifiers.new(name="FH6 Outfit Armature", type="ARMATURE")
-    modifier.object = armature
-    modifier.use_deform_preserve_volume = False
-    patch["fh6_neck_bridge"] = True
-    patch["fh6_probe_exclude"] = False
-
+    slot = material_slot(body, SKIN_MATERIAL)
     before_vertices = len(body.data.vertices)
     before_polygons = len(body.data.polygons)
-    bpy.ops.object.select_all(action="DESELECT")
-    body.select_set(True)
-    patch.select_set(True)
-    bpy.context.view_layer.objects.active = body
-    bpy.ops.object.join()
+    mesh = bmesh.new()
+    mesh.from_mesh(body.data)
+    mesh.verts.ensure_lookup_table()
+    deform = mesh.verts.layers.deform.verify()
+    row_layer = mesh.verts.layers.int.get("fh6_neck_bridge_row") or mesh.verts.layers.int.new("fh6_neck_bridge_row")
+    column_layer = mesh.verts.layers.int.get("fh6_neck_bridge_column") or mesh.verts.layers.int.new("fh6_neck_bridge_column")
+    bottom_layer = mesh.verts.layers.int.get("fh6_neck_bridge_bottom") or mesh.verts.layers.int.new("fh6_neck_bridge_bottom")
+    for vertex in mesh.verts:
+        vertex[row_layer] = -1
+        vertex[column_layer] = -1
+        vertex[bottom_layer] = 0
+    bottom_vertices = [mesh.verts[index] for index in bottom_indices]
+    for vertex in bottom_vertices:
+        vertex[bottom_layer] = 1
+
+    group_indices = {group.name: group.index for group in body.vertex_groups}
+    created_rows: list[list[bmesh.types.BMVert]] = [bottom_vertices]
+    desired_normals: dict[tuple[int, int], Vector] = {}
+    for row in range(1, NECK_ROWS):
+        current_row: list[bmesh.types.BMVert] = []
+        for column, sample in enumerate(row_samples[row]):
+            vertex = mesh.verts.new(tuple(inverse_world @ sample["point"]))
+            vertex[row_layer] = row
+            vertex[column_layer] = column
+            for name, weight in clean_weights(sample["weights"], MAX_INFLUENCES).items():
+                group_index = group_indices.get(name)
+                if group_index is not None:
+                    vertex[deform][group_index] = weight
+            current_row.append(vertex)
+            desired_normals[(row, column)] = (body_normal_matrix @ sample["normal"]).normalized()
+        created_rows.append(current_row)
+
+    uv_layer = mesh.loops.layers.uv.verify()
+    uv_by_vertex: dict[bmesh.types.BMVert, tuple[float, float]] = {}
+    for column, vertex in enumerate(bottom_vertices):
+        uv_by_vertex[vertex] = (column / len(bottom_vertices), 0.0)
+    for row in range(1, NECK_ROWS):
+        for column, vertex in enumerate(created_rows[row]):
+            uv_by_vertex[vertex] = (column / NECK_COLUMNS, row / (NECK_ROWS - 1))
+
+    created_faces: list[bmesh.types.BMFace] = []
+    def create_face(vertices: tuple[bmesh.types.BMVert, bmesh.types.BMVert, bmesh.types.BMVert]) -> None:
+        face = mesh.faces.new(vertices)
+        face.material_index = slot
+        face.smooth = True
+        for loop in face.loops:
+            loop[uv_layer].uv = uv_by_vertex[loop.vert]
+        created_faces.append(face)
+
+    for vertices in zipper_faces(created_rows[0], created_rows[1]):
+        create_face(vertices)
+    for row in range(1, NECK_ROWS - 1):
+        first = created_rows[row]
+        second = created_rows[row + 1]
+        for column in range(NECK_COLUMNS):
+            next_column = (column + 1) % NECK_COLUMNS
+            create_face((first[column], first[next_column], second[next_column]))
+            create_face((first[column], second[next_column], second[column]))
+    mesh.normal_update()
+    radial_score = 0.0
+    for face in created_faces:
+        center = body.matrix_world @ face.calc_center_median()
+        radial = Vector((center.x, center.y - side_y, 0.0))
+        if radial.length > 1.0e-8:
+            radial.normalize()
+            radial_score += (body.matrix_world.to_3x3() @ face.normal).dot(radial)
+    winding_flipped = radial_score < 0.0
+    if winding_flipped:
+        for face in created_faces:
+            face.normal_flip()
+        radial_score = -radial_score
+    mesh.to_mesh(body.data)
+    mesh.free()
     body.data.update()
+
+    # Keep donor corner normals everywhere else, while making the new bridge
+    # follow the measured skin normals across the two component boundary.
+    body.data.update()
+    corner_normals = [Vector(item.vector) for item in body.data.corner_normals]
+    row_attribute = body.data.attributes.get("fh6_neck_bridge_row")
+    column_attribute = body.data.attributes.get("fh6_neck_bridge_column")
+    bottom_attribute = body.data.attributes.get("fh6_neck_bridge_bottom")
+    if row_attribute is None or column_attribute is None or bottom_attribute is None:
+        raise RuntimeError("Neck bridge vertex metadata was not preserved by BMesh")
+    desired_bottom = {
+        index: (body_normal_matrix @ sample["normal"]).normalized()
+        for index, sample in zip(bottom_indices, bottom_samples)
+    }
+    for polygon in body.data.polygons:
+        if not any(row_attribute.data[index].value >= 1 for index in polygon.vertices):
+            continue
+        for loop_index in polygon.loop_indices:
+            vertex_index = body.data.loops[loop_index].vertex_index
+            row = int(row_attribute.data[vertex_index].value)
+            column = int(column_attribute.data[vertex_index].value)
+            if row >= 1:
+                corner_normals[loop_index] = desired_normals[(row, column)]
+            elif vertex_index in desired_bottom:
+                corner_normals[loop_index] = desired_bottom[vertex_index]
+    body.data.normals_split_custom_set(corner_normals)
+
+    added_vertices = len(body.data.vertices) - before_vertices
+    added_polygons = len(body.data.polygons) - before_polygons
+    body["fh6_neck_bridge"] = "native-boundary-4-ring-v001"
     body["fh6_neck_bridge_vertex_start"] = before_vertices
-    body["fh6_neck_bridge_vertex_count"] = len(vertex_weights)
+    body["fh6_neck_bridge_vertex_count"] = added_vertices
     body["fh6_neck_bridge_columns"] = NECK_COLUMNS
     body["fh6_neck_bridge_rows"] = NECK_ROWS
+    body["fh6_neck_bridge_bottom_count"] = len(bottom_indices)
     return {
-        "method": "closed four-row loft from projected body skin to measured lower-face boundary",
+        "method": "native welded body opening to measured jaw boundary, four total rings, canonical face bridge weights",
         "jaw": jaw_report,
+        "weld": weld_report,
+        "ring_alignment": alignment_report,
         "columns": NECK_COLUMNS,
+        "front_columns": NECK_FRONT_COLUMNS,
         "rows": NECK_ROWS,
-        "added_vertices": len(body.data.vertices) - before_vertices,
-        "added_polygons": len(body.data.polygons) - before_polygons,
-        "source_gap_mm": {
-            "min": round(min(gaps) * 1000.0, 6),
-            "mean": round(sum(gaps) / len(gaps) * 1000.0, 6),
-            "p95": round(float(percentile(gaps, 0.95)) * 1000.0, 6),
-            "max": round(max(gaps) * 1000.0, 6),
-        },
-        "weight_rows": ["projected body", "body/Neck1", "body/Neck1/Head", "Neck1/Head"],
+        "bottom_ring_vertices": len(bottom_indices),
+        "added_vertices": added_vertices,
+        "added_polygons": added_polygons,
+        "radial_winding_score": round(radial_score, 8),
+        "winding_flipped": winding_flipped,
+        "weight_rows": ["native body boundary", "Body/Head distance 1/3", "Body/Head distance 2/3", "measured face boundary"],
     }
+
+
+def normalize_weights(obj: bpy.types.Object, armature: bpy.types.Object) -> dict[str, int]:
+    allowed = {bone.name for bone in armature.data.bones}
+    changed = 0
+    for vertex in obj.data.vertices:
+        raw = weight_dict(obj, vertex.index, allowed)
+        cleaned = clean_weights(raw)
+        if not cleaned:
+            continue
+        raw_total = sum(raw.values())
+        needs_update = (
+            len(raw) > MAX_INFLUENCES
+            or abs(raw_total - 1.0) > 1.0e-6
+            or set(raw) != set(cleaned)
+            or any(abs(raw[name] - cleaned[name]) > 1.0e-6 for name in cleaned)
+        )
+        if needs_update:
+            replace_vertex_weights(obj, vertex.index, cleaned)
+            changed += 1
+    obj.data.update()
+    return {"changed_vertices": changed}
 
 
 def validate_weights(obj: bpy.types.Object, armature: bpy.types.Object) -> dict[str, object]:
@@ -602,6 +984,7 @@ def validate_weights(obj: bpy.types.Object, armature: bpy.types.Object) -> dict[
     unresolved: set[str] = set()
     zero = 0
     over = 0
+    not_normalized = 0
     for vertex in obj.data.vertices:
         weights = []
         for item in vertex.groups:
@@ -615,14 +998,18 @@ def validate_weights(obj: bpy.types.Object, armature: bpy.types.Object) -> dict[
         zero += int(not weights)
         over += int(len(weights) > MAX_INFLUENCES)
         if weights:
-            sums.append(sum(weights))
+            total = sum(weights)
+            sums.append(total)
+            not_normalized += int(abs(total - 1.0) > 1.0e-4)
     return {
         "influence_histogram": dict(sorted(histogram.items())),
         "zero_weight_vertices": zero,
         "vertices_over_limit": over,
+        "vertices_not_normalized": not_normalized,
         "unresolved_groups": sorted(unresolved),
         "weight_sum_min": min(sums) if sums else 0.0,
         "weight_sum_max": max(sums) if sums else 0.0,
+        "max_weight_sum_error": max((abs(total - 1.0) for total in sums), default=0.0),
     }
 
 
@@ -652,13 +1039,19 @@ def main() -> None:
     head_objects = append_objects(head_blend, {HEAD_MESH})
     head = head_objects[0]
     neck_report = add_neck_bridge(body, armature, head)
+    normalization_report = normalize_weights(body, armature)
 
     for obj in [*donors, *head_objects]:
         bpy.data.objects.remove(obj, do_unlink=True)
     body["fh6_joint_repair"] = "female-donor-barycentric-v001"
-    body["fh6_neck_bridge"] = "under-jaw-open-loft-v001"
+    body["fh6_neck_bridge"] = "native-boundary-4-ring-v001"
     validation = validate_weights(body, armature)
-    if validation["zero_weight_vertices"] or validation["vertices_over_limit"] or validation["unresolved_groups"]:
+    if (
+        validation["zero_weight_vertices"]
+        or validation["vertices_over_limit"]
+        or validation["vertices_not_normalized"]
+        or validation["unresolved_groups"]
+    ):
         raise RuntimeError(f"Body repair weight validation failed: {validation}")
     bpy.ops.wm.save_as_mainfile(filepath=str(output), compress=False, check_existing=False)
     report = {
@@ -682,6 +1075,7 @@ def main() -> None:
             "weights": validation,
         },
         "weight_transfer": transfer_report,
+        "post_bridge_normalization": normalization_report,
         "neck_bridge": neck_report,
         "validation_level": {"data": True, "blender_visual": False, "modelbin": False, "offline_game": False},
         "license_guard": "Local technical validation only; do not redistribute the source character.",
