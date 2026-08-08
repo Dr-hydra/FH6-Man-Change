@@ -33,6 +33,21 @@ HEAD_MESH = "Si_Display_HeadHair_LOD0"
 FEMALE_BODY = "Female_Body"
 FEMALE_ARMS = "Female_Body.001"
 SKIN_MATERIAL = "肌"
+GARMENT_MATERIALS = ("Cloth1", "Cloth1Alpha")
+GARMENT_ARM_POSES = {
+    "shoulders": {
+        "LeftShoulder": (8.0, 0.0, 0.0),
+        "RightShoulder": (8.0, 0.0, 0.0),
+        "LeftArm": (65.0, 0.0, 0.0),
+        "RightArm": (65.0, 0.0, 0.0),
+    },
+    "elbows": {
+        "LeftArm": (25.0, 0.0, 0.0),
+        "RightArm": (25.0, 0.0, 0.0),
+        "LeftForeArm": (75.0, 0.0, 0.0),
+        "RightForeArm": (-75.0, 0.0, 0.0),
+    },
+}
 MAX_INFLUENCES = 4
 MIN_WEIGHT = 0.001
 NECK_COLUMNS = 48
@@ -347,6 +362,209 @@ def transfer_skin_weights(
             if items
         },
         "wrist_smoothing": wrist_smoothing,
+    }
+
+
+def reset_armature_pose(armature: bpy.types.Object, pose_position: str = "POSE") -> None:
+    armature.data.pose_position = pose_position
+    for bone in armature.pose.bones:
+        bone.rotation_mode = "XYZ"
+        bone.rotation_euler = (0.0, 0.0, 0.0)
+        bone.location = (0.0, 0.0, 0.0)
+        bone.scale = (1.0, 1.0, 1.0)
+
+
+def apply_arm_pose(armature: bpy.types.Object, rotations: dict[str, tuple[float, float, float]]) -> None:
+    reset_armature_pose(armature)
+    for name, degrees in rotations.items():
+        bone = armature.pose.bones.get(name)
+        if bone is None:
+            raise RuntimeError(f"Missing garment arm diagnostic bone {name!r}")
+        bone.rotation_euler = tuple(math.radians(value) for value in degrees)
+    bpy.context.view_layer.update()
+
+
+def evaluated_coordinates(obj: bpy.types.Object) -> list[Vector]:
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated = obj.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    try:
+        matrix = evaluated.matrix_world
+        return [matrix @ vertex.co for vertex in mesh.vertices]
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def garment_edge_context(body: bpy.types.Object) -> dict[tuple[int, int], set[int]]:
+    slots = {material_slot(body, name) for name in GARMENT_MATERIALS}
+    context: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for polygon in body.data.polygons:
+        if polygon.material_index not in slots:
+            continue
+        vertices = list(polygon.vertices)
+        for first, second in zip(vertices, vertices[1:] + vertices[:1]):
+            context[tuple(sorted((first, second)))].update(vertices)
+    return context
+
+
+def severe_garment_edges(
+    rest_coordinates: list[Vector],
+    pose_coordinates: list[Vector],
+    edges: Iterable[tuple[int, int]],
+) -> list[dict[str, object]]:
+    severe = []
+    for first, second in edges:
+        rest_length = (rest_coordinates[first] - rest_coordinates[second]).length
+        pose_length = (pose_coordinates[first] - pose_coordinates[second]).length
+        if rest_length <= 1.0e-8 or pose_length <= 1.0e-8:
+            continue
+        ratio = max(rest_length / pose_length, pose_length / rest_length)
+        absolute_delta = abs(rest_length - pose_length)
+        if ratio <= 8.0 or absolute_delta <= 0.015:
+            continue
+        severe.append(
+            {
+                "edge": [first, second],
+                "ratio": round(ratio, 6),
+                "rest_length_mm": round(rest_length * 1000.0, 6),
+                "pose_length_mm": round(pose_length * 1000.0, 6),
+                "absolute_delta_mm": round(absolute_delta * 1000.0, 6),
+            }
+        )
+    return sorted(severe, key=lambda item: float(item["ratio"]), reverse=True)
+
+
+def repair_garment_arm_discontinuities(
+    body: bpy.types.Object,
+    armature: bpy.types.Object,
+    female_arms: bpy.types.Object,
+) -> dict[str, object]:
+    """Repair complete disconnected garment components that split across arm/core bones."""
+    allowed_bones = {bone.name for bone in armature.data.bones}
+    donor_surface = DonorSurface(female_arms, allowed_bones)
+    rest_coordinates = [body.matrix_world @ vertex.co for vertex in body.data.vertices]
+    edge_context = garment_edge_context(body)
+    adjacency: dict[int, set[int]] = defaultdict(set)
+    for first, second in edge_context:
+        adjacency[first].add(second)
+        adjacency[second].add(first)
+    components: list[set[int]] = []
+    vertex_component: dict[int, int] = {}
+    for start in sorted(adjacency):
+        if start in vertex_component:
+            continue
+        component_index = len(components)
+        component = {start}
+        vertex_component[start] = component_index
+        queue = deque([start])
+        while queue:
+            current = queue.popleft()
+            for neighbor in adjacency[current]:
+                if neighbor in vertex_component:
+                    continue
+                vertex_component[neighbor] = component_index
+                component.add(neighbor)
+                queue.append(neighbor)
+        components.append(component)
+
+    initial_severe: dict[str, list[dict[str, object]]] = {}
+    severe_edges: set[tuple[int, int]] = set()
+    for pose_name, rotations in GARMENT_ARM_POSES.items():
+        apply_arm_pose(armature, rotations)
+        items = severe_garment_edges(
+            rest_coordinates, evaluated_coordinates(body), edge_context
+        )
+        initial_severe[pose_name] = items
+        severe_edges.update(tuple(item["edge"]) for item in items)
+    affected_components = sorted({vertex_component[edge[0]] for edge in severe_edges})
+
+    changed: set[int] = set()
+    component_reports: list[dict[str, object]] = []
+    for component_index in affected_components:
+        component = components[component_index]
+        points = [rest_coordinates[index] for index in component]
+        bounds_min = Vector(tuple(min(point[axis] for point in points) for axis in range(3)))
+        bounds_max = Vector(tuple(max(point[axis] for point in points) for axis in range(3)))
+        extent = bounds_max - bounds_min
+        samples = {
+            index: donor_surface.sample(rest_coordinates[index]) for index in sorted(component)
+        }
+        valid_samples = {
+            index: sample for index, sample in samples.items() if sample[0] and math.isfinite(sample[1])
+        }
+        if not valid_samples:
+            component_reports.append(
+                {
+                    "component": component_index,
+                    "vertices": len(component),
+                    "mode": "unresolved",
+                    "reason": "no Female Arms surface sample",
+                }
+            )
+            continue
+
+        # The only large affected components are the actual left/right sleeve
+        # shells. Smaller pieces and long strips are disconnected accessories,
+        # so a uniform attachment transform preserves their authored shape.
+        surface_mode = len(component) >= 120
+        if surface_mode:
+            replacements = {index: weights for index, (weights, _distance) in valid_samples.items()}
+            attachment_vertex = None
+            attachment_distance = None
+            mode = "per_vertex_surface"
+        else:
+            attachment_vertex, (attachment_weights, attachment_distance) = min(
+                valid_samples.items(), key=lambda item: item[1][1]
+            )
+            replacements = {index: attachment_weights for index in component}
+            mode = "rigid_nearest_attachment"
+        for index, weights in replacements.items():
+            replace_vertex_weights(body, index, weights)
+        changed.update(replacements)
+        distances = [distance for _weights, distance in valid_samples.values()]
+        component_reports.append(
+            {
+                "component": component_index,
+                "vertices": len(component),
+                "mode": mode,
+                "bounds_min_m": [round(value, 9) for value in bounds_min],
+                "bounds_max_m": [round(value, 9) for value in bounds_max],
+                "extent_m": [round(value, 9) for value in extent],
+                "attachment_vertex": attachment_vertex,
+                "attachment_distance_mm": round(attachment_distance * 1000.0, 6)
+                if attachment_distance is not None
+                else None,
+                "surface_distance_mm": {
+                    "min": round(min(distances) * 1000.0, 6),
+                    "mean": round(sum(distances) / len(distances) * 1000.0, 6),
+                    "max": round(max(distances) * 1000.0, 6),
+                },
+            }
+        )
+    body.data.update()
+    bpy.context.view_layer.update()
+
+    final_severe: dict[str, list[dict[str, object]]] = {}
+    for pose_name, rotations in GARMENT_ARM_POSES.items():
+        apply_arm_pose(armature, rotations)
+        final_severe[pose_name] = severe_garment_edges(
+            rest_coordinates, evaluated_coordinates(body), edge_context
+        )
+    reset_armature_pose(armature, "REST")
+    bpy.context.view_layer.update()
+    return {
+        "method": "component-level Female Arms repair for garment edges with ratio > 8 and absolute change > 15 mm; sleeve shells use per-vertex projection and disconnected accessories use a rigid nearest attachment",
+        "pose_degrees_xyz": {
+            name: {bone: list(values) for bone, values in rotations.items()}
+            for name, rotations in GARMENT_ARM_POSES.items()
+        },
+        "initial_severe_edges": {name: len(items) for name, items in initial_severe.items()},
+        "initial_worst_edges": {name: items[:10] for name, items in initial_severe.items()},
+        "affected_components": len(affected_components),
+        "components": component_reports,
+        "changed_vertices": len(changed),
+        "final_severe_edges": {name: len(items) for name, items in final_severe.items()},
+        "final_worst_edges": {name: items[:10] for name, items in final_severe.items()},
     }
 
 
@@ -1036,6 +1254,9 @@ def main() -> None:
     donors = append_objects(donor_blend, {FEMALE_BODY, FEMALE_ARMS})
     donor_by_name = {obj.name: obj for obj in donors}
     transfer_report = transfer_skin_weights(body, armature, donor_by_name[FEMALE_BODY], donor_by_name[FEMALE_ARMS])
+    garment_arm_report = repair_garment_arm_discontinuities(
+        body, armature, donor_by_name[FEMALE_ARMS]
+    )
     head_objects = append_objects(head_blend, {HEAD_MESH})
     head = head_objects[0]
     neck_report = add_neck_bridge(body, armature, head)
@@ -1043,7 +1264,7 @@ def main() -> None:
 
     for obj in [*donors, *head_objects]:
         bpy.data.objects.remove(obj, do_unlink=True)
-    body["fh6_joint_repair"] = "female-donor-barycentric-v001"
+    body["fh6_joint_repair"] = "female-donor-barycentric-garment-pose-v002"
     body["fh6_neck_bridge"] = "native-boundary-4-ring-v001"
     validation = validate_weights(body, armature)
     if (
@@ -1057,7 +1278,7 @@ def main() -> None:
     report = {
         "schema_version": 1,
         "created_utc": datetime.now(timezone.utc).astimezone().isoformat(),
-        "purpose": "Si FBX Display LOD0 body skin weight and under-jaw neck repair.",
+        "purpose": "Si FBX Display LOD0 body/garment weight and under-jaw neck repair.",
         "inputs": {
             "body_blend": str(source),
             "body_sha256": sha256(source),
@@ -1075,13 +1296,14 @@ def main() -> None:
             "weights": validation,
         },
         "weight_transfer": transfer_report,
+        "garment_arm_discontinuity_repair": garment_arm_report,
         "post_bridge_normalization": normalization_report,
         "neck_bridge": neck_report,
         "validation_level": {"data": True, "blender_visual": False, "modelbin": False, "offline_game": False},
         "license_guard": "Local technical validation only; do not redistribute the source character.",
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("FH6_SI_BODY_REPAIR=" + json.dumps({"blend": str(output), "vertices": len(body.data.vertices), "changed_weights": transfer_report["changed_vertices"], "neck_vertices": neck_report["added_vertices"]}, ensure_ascii=False, separators=(",", ":")))
+    print("FH6_SI_BODY_REPAIR=" + json.dumps({"blend": str(output), "vertices": len(body.data.vertices), "changed_weights": transfer_report["changed_vertices"] + garment_arm_report["changed_vertices"], "garment_arm_vertices": garment_arm_report["changed_vertices"], "neck_vertices": neck_report["added_vertices"]}, ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":
