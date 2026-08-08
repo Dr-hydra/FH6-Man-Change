@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "archive": {
+    "path": "E:\\Dr.Hydra\\FH6-Man-Change\\【明日方舟：终末地】祀_by_茶叶味香皂_ea803c2429de15a49d2b457b9cea9738.zip",
+    "size": 45207446,
+    "sha256": "ea3bfcdc0064ff93678829d1c85cf78e41d9b6c3d11d15c6c4bff0098e397421"
+  },
+  "pmx_path": "si.pmx",
+  "entry_count": 70,
+  "entries": [
+    {
+      "archive_name": "other tex/common_deco_white.png",
+      "path": "other tex/common_deco_white.png",
+      "size": 217,
+      "crc32": "ecd73555",
+      "sha256": "c98b5ec24b2014d2439f93c60f3a82671e4855cf19cc3b4e06400e1d57c95b32"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_body_01_RD.png",
+      "path": "other tex/T_actor_common_body_01_RD.png",
+      "size": 228,
+      "crc32": "71bdf048",
+      "sha256": "f92de330ab065af58d4e805b1571aa7b3702c5babd4009abe56bca22b675a4d4"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_cloth_02_RS.png",
+      "path": "other tex/T_actor_common_cloth_02_RS.png",
+      "size": 13825,
+      "crc32": "c4de8d9a",
+      "sha256": "eb6869ceefd16a1154fbccd94f55d396fb7c8b260eb54fc093fcc45ce4d117da"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_cloth_04_RD.png",
+      "path": "other tex/T_actor_common_cloth_04_RD.png",
+      "size": 322,
+      "crc32": "7836b677",
+      "sha256": "ff12009a3f80f1542591d90ec301b09eaadb752aed10d4206e26936dfe6f9685"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_cloth_04_RS.png",
+      "path": "other tex/T_actor_common_cloth_04_RS.png",
+      "size": 8429,
+      "crc32": "aed13e71",
+      "sha256": "bdf45f9f6c3b9b2d924dbcbd4ab33598b3c285106381f778c6113c86cdf0a148"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_eyeshadow_01_M.png",
+      "path": "other tex/T_actor_common_eyeshadow_01_M.png",
+      "size": 431,
+      "crc32": "20a5e83e",
+      "sha256": "3baee4cdbc31a196fe6b2e694e60fb73b8b3a8cc2e9f9429258adfbad2cf5358"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_face_01_hl_M.png",
+      "path": "other tex/T_actor_common_face_01_hl_M.png",
+      "size": 2380,
+      "crc32": "abc8f154",
+      "sha256": "c08864f868678b77463e01b6c1338790a4966c7d194a68c7f7edefb0ed85b5cd"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_face_01_RD.png",
+      "path": "other tex/T_actor_common_face_01_RD.png",
+      "size": 228,
+      "crc32": "71bdf048",
+      "sha256": "f92de330ab065af58d4e805b1571aa7b3702c5babd4009abe56bca22b675a4d4"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_female_emotion_atlas_01_D.png",
+      "path": "other tex/T_actor_common_female_emotion_atlas_01_D.png",
+      "size": 130231,
+      "crc32": "96932d00",
+      "sha256": "659fe5b5dccee906b5da32b6388e36f08f919d9ceb011f8c7ed80950a59d7280"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_female_face_01_cm_M.png",
+      "path": "other tex/T_actor_common_female_face_01_cm_M.png",
+      "size": 53424,
+      "crc32": "92ae76f5",
+      "sha256": "db38cc2209f2069080dbf0f8f324f5b12ee370337a64225b84a2e31b01a97689"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_female_face_01_SDF.png",
+      "path": "other tex/T_actor_common_female_face_01_SDF.png",
+      "size": 274282,
+      "crc32": "9fc9e42a",
+      "sha256": "76604ffebc687989bd0b373829ed1e076201577b71f743f447f221d54674ea5f"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_femaleskincolor01_lut_D.png",
+      "path": "other tex/T_actor_common_femaleskincolor01_lut_D.png",
+      "size": 38274,
+      "crc32": "de926c51",
+      "sha256": "e0b0efb7d2d665e1e20eb14e785e0ca422f0cddfa150bf5463d417a10ee9f882"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_femaleskincolor03_lut_D.png",
+      "path": "other tex/T_actor_common_femaleskincolor03_lut_D.png",
+      "size": 39343,
+      "crc32": "c409e25e",
+      "sha256": "e5ddfd002a32fdd8094abaf7f528698cf017dafab3f0603736291be1ee18251a"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_hair_03_RD.png",
+      "path": "other tex/T_actor_common_hair_03_RD.png",
+      "size": 227,
+      "crc32": "4a32087f",
+      "sha256": "c1ad141a147abc43fb558c2abe1dc30f13a7404c34b1a4f08fedb7797b51c289"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_hairline_03_M.png",
+      "path": "other tex/T_actor_common_hairline_03_M.png",
+      "size": 2549,
+      "crc32": "2086708d",
+      "sha256": "1b671cfae07640a838accb5a37a1fd7651590fd074b950a7dccfd2720100459a"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_hairshadow_01_M.png",
+      "path": "other tex/T_actor_common_hairshadow_01_M.png",
+      "size": 428,
+      "crc32": "e13b64ff",
+      "sha256": "64e5f15d8a015e67945401cec28f9431f169e6e26531bb6bf0514bbd8eb9115d"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_hairst_01_ST.png",
+      "path": "other tex/T_actor_common_hairst_01_ST.png",
+      "size": 24149,
+      "crc32": "502345f4",
+      "sha256": "e41d6c2e3c0076e6ed73bdc61fa8f207edf34fefe042a1aa50fdb21889a3b715"
+    },
+    {
+      "archive_name": "other tex/T_actor_common_matcap_08_D.png",
+      "path": "other tex/T_actor_common_matcap_08_D.png",
+      "size": 77022,
+      "crc32": "1bee9e0a",
+      "sha256": "bdc9ee34cc8696f269daba2fb8dba0247a86c627657b23fd9b1e10ef618d7df8"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_body_01_D.png",
+      "path": "other tex/T_actor_jsspsi_body_01_D.png",
+      "size": 728741,
+      "crc32": "ea5e7b4a",
+      "sha256": "082c9a212233723b4dd5cf673231792ac334815bdd729bcba30d13f44257d578"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_body_01_N.png",
+      "path": "other tex/T_actor_jsspsi_body_01_N.png",
+      "size": 612121,
+      "crc32": "b73f5fd5",
+      "sha256": "57afd8ac7dd8ce5bcef7ad4c3fda44d3ba5c4cbe929bc161e7919b76381c829e"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_01_D.png",
+      "path": "other tex/T_actor_jsspsi_cloth_01_D.png",
+      "size": 6029531,
+      "crc32": "f0780972",
+      "sha256": "38e628823a52a907adb86adeee144f44b3fdfba4d5360b27761e08a21ce5c912"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_01_E.png",
+      "path": "other tex/T_actor_jsspsi_cloth_01_E.png",
+      "size": 24813,
+      "crc32": "98c92af5",
+      "sha256": "0256810ba580734f34639d4ec498285fd25fb3cbeb3b77fb16057aa6f275686f"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_01_N.png",
+      "path": "other tex/T_actor_jsspsi_cloth_01_N.png",
+      "size": 5503609,
+      "crc32": "d3ecd3ea",
+      "sha256": "86ba72cf419ca9bde405b67b711fdc8fb32ea6a59abee4db318347c096f134e1"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_01_P.png",
+      "path": "other tex/T_actor_jsspsi_cloth_01_P.png",
+      "size": 5862286,
+      "crc32": "351242be",
+      "sha256": "75faf7dfd44d1d1898f259d65482ef6fd74150d79ce6ca170096790e7a23ca73"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_01_ST.png",
+      "path": "other tex/T_actor_jsspsi_cloth_01_ST.png",
+      "size": 2461,
+      "crc32": "93161625",
+      "sha256": "267ae5573652f6b84696ab934d9763be47a67e887c91ca621b30252b6fb6eb81"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_02_D.png",
+      "path": "other tex/T_actor_jsspsi_cloth_02_D.png",
+      "size": 396658,
+      "crc32": "9cb509c8",
+      "sha256": "84b32686adb0d085166556edfc433e27adcde600fb646f85b9ecf1acae59a939"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_02_E.png",
+      "path": "other tex/T_actor_jsspsi_cloth_02_E.png",
+      "size": 146119,
+      "crc32": "58fa01cb",
+      "sha256": "0031f2f3754ad7de7152601611d66c6d6d0602ad69178e8493d34eeb8dd0bde8"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_02_N.png",
+      "path": "other tex/T_actor_jsspsi_cloth_02_N.png",
+      "size": 272907,
+      "crc32": "ff9f3647",
+      "sha256": "26f81770e3da176f2519ad7db2ad48fc9b6189d4b8692eb314191823925ec27f"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_02_P.png",
+      "path": "other tex/T_actor_jsspsi_cloth_02_P.png",
+      "size": 310980,
+      "crc32": "393cdbd8",
+      "sha256": "a84e6bea63489bc0998a51dc82b3c55abd691a76b8ccadcbc7caf266db191862"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_cloth_03_M.png",
+      "path": "other tex/T_actor_jsspsi_cloth_03_M.png",
+      "size": 254405,
+      "crc32": "ce0c2db3",
+      "sha256": "7e943459f9e808300616550c741ffe2dd4d58e0263bdcf78bba3f93255603d95"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_face_01_D.png",
+      "path": "other tex/T_actor_jsspsi_face_01_D.png",
+      "size": 326007,
+      "crc32": "942da1f6",
+      "sha256": "7a1f99ed2c6eb9c72514274b481afb01b4c07f6335c6fc9e8a20ca1877740987"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_face_01_N.png",
+      "path": "other tex/T_actor_jsspsi_face_01_N.png",
+      "size": 94053,
+      "crc32": "70c81747",
+      "sha256": "06b426812be857ffec06b917589bf6b4dd83f0d087c4e79d5b60eb96c25bb9ab"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_face_01_ST.png",
+      "path": "other tex/T_actor_jsspsi_face_01_ST.png",
+      "size": 8637,
+      "crc32": "d7bec5a4",
+      "sha256": "92146db4e8245868ccd36f4a4a9e82101675a6508ee16a96610bf3da50ce0e6c"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_hair_01_D.png",
+      "path": "other tex/T_actor_jsspsi_hair_01_D.png",
+      "size": 2737012,
+      "crc32": "ffcb729e",
+      "sha256": "7e03c35252c935e1537330f76bd12fb3b4b1508a66b66183cd08b118e28e033a"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_hair_01_HN.png",
+      "path": "other tex/T_actor_jsspsi_hair_01_HN.png",
+      "size": 2383828,
+      "crc32": "028cf5b9",
+      "sha256": "f25bf0558ced1f67e20a185e7663de112ff18b5f4ed6c2a0230dd16e63165107"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_hair_01_P.png",
+      "path": "other tex/T_actor_jsspsi_hair_01_P.png",
+      "size": 3235774,
+      "crc32": "db1f952b",
+      "sha256": "ebeefe58c517fdfc04baece3e39b0ec3692ddd96072d4fd7b81020b3326a8d2d"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_hair_01_RS.png",
+      "path": "other tex/T_actor_jsspsi_hair_01_RS.png",
+      "size": 6922,
+      "crc32": "2f2e28db",
+      "sha256": "23de137bcb0d490ae6c5380f98a6150a77e03214759e9ed256f7f26fd49353cb"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_hair_01_ST.png",
+      "path": "other tex/T_actor_jsspsi_hair_01_ST.png",
+      "size": 157994,
+      "crc32": "a4b88438",
+      "sha256": "b94b0a08bb46f4a50465a900b62f5e62e9048f7b6f472dca50d289d32ae5df77"
+    },
+    {
+      "archive_name": "other tex/T_actor_jsspsi_iris_01_D.png",
+      "path": "other tex/T_actor_jsspsi_iris_01_D.png",
+      "size": 292534,
+      "crc32": "6d24170f",
+      "sha256": "0e406bb74b9c9f5fd2931e0ad86d4e2a04b9f61c2b21c7a493bbbcbbe8851beb"
+    },
+    {
+      "archive_name": "other tex/T_actor_lizhiyan_cloth_01_ST.png",
+      "path": "other tex/T_actor_lizhiyan_cloth_01_ST.png",
+      "size": 2483,
+      "crc32": "04f956a6",
+      "sha256": "d6537cab31e70fb3c56c1f90858569d54ba9d17b6a93e823743f5044b9efb37b"
+    },
+    {
+      "archive_name": "other tex/T_default_mro_MRO.png",
+      "path": "other tex/T_default_mro_MRO.png",
+      "size": 99,
+      "crc32": "64b1c45a",
+      "sha256": "ac1ba1432ba4505965ede1634aa648d81e776a23677b0153f519a9c8cb17a5c4"
+    },
+    {
+      "archive_name": "other tex/T_fx_flow_527_M.png",
+      "path": "other tex/T_fx_flow_527_M.png",
+      "size": 44209,
+      "crc32": "2d02c165",
+      "sha256": "8b8c51686546312493b771090cb5a58b17bb3e1e9088602dc59162ae65763c07"
+    },
+    {
+      "archive_name": "other tex/T_fx_jsspsi_si_mask2_M.png",
+      "path": "other tex/T_fx_jsspsi_si_mask2_M.png",
+      "size": 34369,
+      "crc32": "4b2f3eda",
+      "sha256": "2aa92110d40fd970971751ccb789f3a2126fab547e3807e62d5731d15c2ed114"
+    },
+    {
+      "archive_name": "other tex/T_fx_jsspsi_si_mask5_M.png",
+      "path": "other tex/T_fx_jsspsi_si_mask5_M.png",
+      "size": 26080,
+      "crc32": "ea8d1378",
+      "sha256": "3675d1b2a12ab9cd7a59918e57c5ea84e693e2948c162a36abc993320aa12468"
+    },
+    {
+      "archive_name": "other tex/T_fx_mask_03_02_M.png",
+      "path": "other tex/T_fx_mask_03_02_M.png",
+      "size": 29769,
+      "crc32": "8ebefb24",
+      "sha256": "46e34c115706cea3bcf515d29593b2580f0efa830792e541a1413d3adfd34ad0"
+    },
+    {
+      "archive_name": "other tex/T_fx_mask_161_M.png",
+      "path": "other tex/T_fx_mask_161_M.png",
+      "size": 44464,
+      "crc32": "5f64b548",
+      "sha256": "75b25382692e147ce72d9b86724412ed673bca98d548e72ade4149efa3019da7"
+    },
+    {
+      "archive_name": "other tex/T_fx_mask_616_c_M.png",
+      "path": "other tex/T_fx_mask_616_c_M.png",
+      "size": 117964,
+      "crc32": "786a6393",
+      "sha256": "55576cf13baecf88ff32bf4c0b7e1000621f9f9b0aa84b2ba8652288c2daa26e"
+    },
+    {
+      "archive_name": "other tex/T_fx_mask_804_M.png",
+      "path": "other tex/T_fx_mask_804_M.png",
+      "size": 6086,
+      "crc32": "3e5d1b70",
+      "sha256": "46edb5dfd55a12ee94d693142b5ee5fbf6c513353a143495281f1b428273384f"
+    },
+    {
+      "archive_name": "other tex/T_fx_mask_zr027_c_M.png",
+      "path": "other tex/T_fx_mask_zr027_c_M.png",
+      "size": 23769,
+      "crc32": "7b5e637f",
+      "sha256": "253ee2a1080814895cc52cd1f84e5aaaf773a6b95a32764599392b05ea7a22ff"
+    },
+    {
+      "archive_name": "other tex/T_fx_noise_cyt_003_1.png",
+      "path": "other tex/T_fx_noise_cyt_003_1.png",
+      "size": 56338,
+      "crc32": "b6b135f8",
+      "sha256": "54b3db5200e71c3d791f5ed8aefee2e0ade1c46c70543ef4f231f8206c18b1a0"
+    },
+    {
+      "archive_name": "other tex/T_fx_normal_301_N.png",
+      "path": "other tex/T_fx_normal_301_N.png",
+      "size": 218935,
+      "crc32": "fa0c3106",
+      "sha256": "c76da2be261af04cc9bf27cc7db06f8b296ed41d73b1937e4c7a16fdddc4c923"
+    },
+    {
+      "archive_name": "other tex/T_fx_normal_501_N.png",
+      "path": "other tex/T_fx_normal_501_N.png",
+      "size": 19338,
+      "crc32": "892ed700",
+      "sha256": "d357462e0476b1613b630b621a6ec87c503fb38f32e0ab38583a7d7db50c50c4"
+    },
+    {
+      "archive_name": "other tex/T_fx_normal_zr006_N.png",
+      "path": "other tex/T_fx_normal_zr006_N.png",
+      "size": 62272,
+      "crc32": "57136842",
+      "sha256": "bf89a46363506a49497f5d57ffd3ac3f41bfca3e89f0ef6792479c0ee53a75c4"
+    },
+    {
+      "archive_name": "other tex/T_fx_object_504_M.png",
+      "path": "other tex/T_fx_object_504_M.png",
+      "size": 830899,
+      "crc32": "4f076f7d",
+      "sha256": "c7203384ea42d768b6b39a8d712dadd821b281dc971cd1d19e688ec56ee5f3d3"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_fj_03_M.png",
+      "path": "other tex/T_fx_trail_fj_03_M.png",
+      "size": 70249,
+      "crc32": "8104c2fb",
+      "sha256": "354b019e13f4370c34976040579e6ba44b1f675249bfce12441c3cfd71434c49"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_fj_06_M.png",
+      "path": "other tex/T_fx_trail_fj_06_M.png",
+      "size": 57615,
+      "crc32": "ed3a7ff0",
+      "sha256": "2130af25edabc1c3f08d32e0fb733c6ebb0cc6392496f33c49929a145b7a37de"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_fj_09_1_v1d4_02_M.png",
+      "path": "other tex/T_fx_trail_fj_09_1_v1d4_02_M.png",
+      "size": 175976,
+      "crc32": "c9d0ca55",
+      "sha256": "75862f5be9ceab9bec7ff247fc3cf4eddab3234236b63f3fe454a2da260cbf7e"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_fj_09_1_v1d4_M.png",
+      "path": "other tex/T_fx_trail_fj_09_1_v1d4_M.png",
+      "size": 276886,
+      "crc32": "8a8178a8",
+      "sha256": "5c3cbaf45e55fbf3120e6655eadcbb8be16eb99256dec0208b9b11fed46320df"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_fj_09_3_v1d4_M.png",
+      "path": "other tex/T_fx_trail_fj_09_3_v1d4_M.png",
+      "size": 266490,
+      "crc32": "3703d051",
+      "sha256": "e34aecb143fe27f7fdc68a135f1363967a345f7137539b74bc8dd0e86f2159b1"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_gfx_18.png",
+      "path": "other tex/T_fx_trail_gfx_18.png",
+      "size": 49507,
+      "crc32": "8e356e5c",
+      "sha256": "86f714fe835d98414fc7078e69a2fb02ea322e7d4e8f043c03c9de5dd9f75e7d"
+    },
+    {
+      "archive_name": "other tex/T_fx_trail_zrx_08_M.png",
+      "path": "other tex/T_fx_trail_zrx_08_M.png",
+      "size": 235570,
+      "crc32": "cdb91cd3",
+      "sha256": "9d8db2f57f3b5df27a4812eb2de7c5ce3fa32ec138d187d8cbfd6e6d126dcd1b"
+    },
+    {
+      "archive_name": "ReadMe.txt",
+      "path": "ReadMe.txt",
+      "size": 766,
+      "crc32": "15b537c6",
+      "sha256": "7f2c51a23b525ea297ff3be3b93745f9b4173f5357b268ea5458e6f990894311"
+    },
+    {
+      "archive_name": "textures/T_actor_common_female_emotion_atlas_01_D.png",
+      "path": "textures/T_actor_common_female_emotion_atlas_01_D.png",
+      "size": 130231,
+      "crc32": "96932d00",
+      "sha256": "659fe5b5dccee906b5da32b6388e36f08f919d9ceb011f8c7ed80950a59d7280"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_body_01_D.png",
+      "path": "textures/T_actor_jsspsi_body_01_D.png",
+      "size": 360458,
+      "crc32": "2bf61e43",
+      "sha256": "51ab30edf93362febaf1b96e76f87e7df2eb9b0add89493ad8e6a4fb4e1f4997"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_cloth_01_D.png",
+      "path": "textures/T_actor_jsspsi_cloth_01_D.png",
+      "size": 6029531,
+      "crc32": "f0780972",
+      "sha256": "38e628823a52a907adb86adeee144f44b3fdfba4d5360b27761e08a21ce5c912"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_cloth_02_D.png",
+      "path": "textures/T_actor_jsspsi_cloth_02_D.png",
+      "size": 340138,
+      "crc32": "34e0df8e",
+      "sha256": "eebfd2893a5e3167519a29d6f078c75413a94a8d58327adbf9ff0a9487dbccaf"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_face_01_D.png",
+      "path": "textures/T_actor_jsspsi_face_01_D.png",
+      "size": 319940,
+      "crc32": "5176a9f5",
+      "sha256": "10a308433f36a6998bee4d4c4cd09f15e0e716f737209992e3423542bc6f62b2"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_hair_01_D.png",
+      "path": "textures/T_actor_jsspsi_hair_01_D.png",
+      "size": 2639098,
+      "crc32": "3efd40ce",
+      "sha256": "6919b2573f87f35d0de420b23f49f8ec1e6347267ed0e45ad616841996dd55a4"
+    },
+    {
+      "archive_name": "textures/T_actor_jsspsi_iris_01_D.png",
+      "path": "textures/T_actor_jsspsi_iris_01_D.png",
+      "size": 253465,
+      "crc32": "0fc872f9",
+      "sha256": "b9172981c08ef2d4b471f0ec9ce2e54f806dab533dbe9111eefdea27000e0013"
+    },
+    {
+      "archive_name": "祀.pmx",
+      "path": "si.pmx",
+      "size": 4359153,
+      "crc32": "47cc8037",
+      "sha256": "77ce50153620d733de0063e98dcb2f0ca8d38cab9f507185a26cc408068c808a"
+    }
+  ]
+}

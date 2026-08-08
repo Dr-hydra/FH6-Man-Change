@@ -1,0 +1,41 @@
+# Generated milestones, extracted donors, renders, and deployment staging.
+/work/
+
+# Licensed or immutable source/donor binaries stay outside version control.
+*.blend
+*.blend1
+*.fbx
+*.pmx
+*.modelbin
+*.swatchbin
+*.zip
+*.7z
+*.dds
+*.png
+*.jpg
+*.jpeg
+*.tga
+
+# Python and test caches.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# .NET build products.
+**/bin/
+**/obj/
+
+# External tool checkouts retain their own repository history.
+/tools/Forza-Crypto-Tool/
+/tools/ForzaTech-extraction-tools/
+
+# Local editor and transient output.
+.idea/
+.vscode/
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini

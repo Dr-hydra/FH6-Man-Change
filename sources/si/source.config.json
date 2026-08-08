@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "primary_format": "fbx",
+  "primary": {
+    "path": "sources/si/v2/fbx/chr_0036_jsspsi_postmodel/chr_0036_jsspsi_postmodel.fbx",
+    "origin": "E:/Dr.Hydra/EF-Start-Change/artifacts/model-exports/si/chr_0036_jsspsi_postmodel/chr_0036_jsspsi_postmodel.fbx",
+    "global_scale": 100.0,
+    "pose_position": "REST",
+    "working_lod": "lod0",
+    "working_lods": [
+      "lod0",
+      "lod1",
+      "lod2",
+      "lod3"
+    ]
+  },
+  "outputs": {
+    "baseline_blend": "work/si/fbx-source/milestone-00-baseline/si-native-fbx-source-v001.blend",
+    "baseline_metadata": "work/si/fbx-source/milestone-00-baseline/si-native-fbx-source-v001.report.json",
+    "baseline_probe": "work/si/fbx-source/milestone-00-baseline/si-native-fbx-source-v001.probe.json",
+    "component_blend": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.blend",
+    "component_report": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.report.json",
+    "component_probe": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.probe.json",
+    "components": {
+      "lod0": {
+        "blend": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.blend",
+        "report": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.report.json",
+        "probe": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod0-v002.probe.json"
+      },
+      "lod1": {
+        "blend": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod1-v001.blend",
+        "report": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod1-v001.report.json",
+        "probe": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod1-v001.probe.json"
+      },
+      "lod2": {
+        "blend": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod2-v001.blend",
+        "report": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod2-v001.report.json",
+        "probe": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod2-v001.probe.json"
+      },
+      "lod3": {
+        "blend": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod3-v001.blend",
+        "report": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod3-v001.report.json",
+        "probe": "work/si/fbx-source/milestone-01-components/si-native-fbx-components-lod3-v001.probe.json"
+      }
+    }
+  },
+  "display_target": {
+    "scope": "Display",
+    "driver_assets_included": false,
+    "first_writer_policy": {
+      "retain_blocks": [
+        "Skel",
+        "VLay",
+        "MatI"
+      ],
+      "replace_blocks": [
+        "VerB",
+        "IndB",
+        "Skin"
+      ],
+      "update_metadata": [
+        "Mesh",
+        "Modl",
+        "bounds",
+        "counts",
+        "sizes",
+        "absolute_offsets"
+      ]
+    },
+    "physical_containers": {
+      "head_hair": {
+        "name": "Helmet_Race_Modern",
+        "roles": [
+          "head",
+          "hair"
+        ],
+        "archive": "work/si/components/baselines/helmet/Helmet_Race_Modern.zip",
+        "modelbin": "work/si/components/baselines/helmet/extracted/Helmet_Race_Modern.modelbin",
+        "blend": "work/si/components/donors/helmet-race-modern/Helmet_Race_Modern-source.blend",
+        "skeleton_inventory": "work/si/fbx-source/milestone-02-donor-plan/skeletons/helmet-race-modern.skeleton.json",
+        "expected": {
+          "bones": 241,
+          "meshes": 6,
+          "materials": 6,
+          "vertex_layouts": 2,
+          "vertex_buffers": 3,
+          "skin_buffers": 2
+        }
+      },
+      "body_garment": {
+        "name": "Outfit_Race_Suit_Modern_F",
+        "roles": [
+          "body",
+          "garment"
+        ],
+        "archive": "work/donors/Outfit_Race_Suit_Modern_F/original/Outfit_Race_Suit_Modern_F.zip",
+        "modelbin": "work/donors/Outfit_Race_Suit_Modern_F/extracted/Outfit_Race_Suit_Modern_F.modelbin",
+        "blend": "work/donors/Outfit_Race_Suit_Modern_F/blender/Outfit_Race_Suit_Modern_F-source.blend",
+        "skeleton_inventory": "work/si/fbx-source/milestone-02-donor-plan/skeletons/outfit-race-suit-modern-f.skeleton.json",
+        "expected": {
+          "bones": 241,
+          "meshes": 8,
+          "materials": 8,
+          "vertex_layouts": 1,
+          "vertex_buffers": 2,
+          "skin_buffers": 1
+        }
+      }
+    },
+    "semantic_donors": {
+      "face": {
+        "name": "DRV_BA_F_01_Face",
+        "purpose": "dense face, eyelid, eyelash, eye, teeth and mouth weight reference",
+        "blend": "work/si/components/donors/head-face/DRV_BA_F_01_Face-source.blend",
+        "metadata": "work/si/components/donors/head-face/DRV_BA_F_01_Face-source.metadata.json",
+        "skeleton_inventory": "work/si/fbx-source/milestone-02-donor-plan/skeletons/face.skeleton.json"
+      },
+      "alice": {
+        "name": "Driver_Alice_F",
+        "purpose": "Display eye, eyelash, teeth and body draw behavior reference",
+        "blend": "work/si/components/donors/head-alice-f/Driver_Alice_F-source.blend",
+        "metadata": "work/si/components/donors/head-alice-f/Driver_Alice_F-source.metadata.json",
+        "skeleton_inventory": "work/si/fbx-source/milestone-02-donor-plan/skeletons/alice.skeleton.json"
+      },
+      "body": {
+        "name": "Female",
+        "purpose": "skin, body/arm split, seam and body weight reference",
+        "blend": "work/si/components/donors/body-female/Female-source.blend",
+        "metadata": "work/si/components/donors/body-female/Female-source.metadata.json",
+        "skeleton_inventory": "work/si/fbx-source/milestone-02-donor-plan/skeletons/female.skeleton.json"
+      },
+      "hair_slot": {
+        "name": "Hair_Bald",
+        "purpose": "Display hair-slot and single hair material reference only",
+        "modelbin": "samples/modelbin/Hair_Bald.modelbin",
+        "report": "samples/modelbin/Hair_Bald.report.json"
+      }
+    },
+    "contract_output": "work/si/fbx-source/milestone-02-donor-plan/si-display-contract-v001.json"
+  },
+  "compatibility": {
+    "pmx_path": "sources/si/v1/original/si.pmx",
+    "status": "reference_only",
+    "uses": [
+      "legacy material labels",
+      "MMD expression morph reference",
+      "historical visual comparison"
+    ]
+  }
+}
