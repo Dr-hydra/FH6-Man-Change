@@ -24,6 +24,14 @@
 
 用户端安装器和部署工具由独立的 [FH6Tools](https://github.com/Dr-hydra/FH6Tools) 项目维护；本仓库只定义安装器读取的 Mod 包格式、校验规则和部署合同。
 
+## 安装器下载
+
+请从 [FH6Tools Releases](https://github.com/Dr-hydra/FH6Tools/releases) 下载最新版安装器：
+
+[下载 FH6Tools v2.3.1](https://github.com/Dr-hydra/FH6Tools/releases/tag/v2.3.1)
+
+安装器与 Mod 成品包分开发布。下载本项目 Release 中的 Mod ZIP 后，使用 FH6Tools 安装器进行验证、备份和安装。
+
 ## Skills
 
 当前提供 4 个 FH6 专用 Skill：`fh6-blender-pipeline`、`fh6-head-runtime-pipeline`、`fh6-body-proportion-repair`、`fh6-character-detail-repair`。它们分别覆盖模型导入、头部运行时、身体比例修复和局部细节修复。Skill 安装包可在 Releases 页面下载。
