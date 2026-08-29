@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import shutil
-import struct
 import sys
 import zlib
 from datetime import datetime, timezone
@@ -21,7 +20,7 @@ from rebuild_fh6_aligned_zip import (  # noqa: E402
     LOCAL,
     central_alignment_extra,
     deflate,
-    extra_fields,
+    local_alignment_extra,
     read_entries,
     read_eocd,
     verify,
@@ -67,6 +66,22 @@ def build(source: Path, output: Path, additions: dict[str, Path]) -> dict:
         overlap = sorted(existing & set(additions))
         if overlap:
             raise ValueError(f"Entries already exist: {overlap}")
+        header_template = next(
+            (
+                entry
+                for entry in entries
+                if entry.name.startswith("Swatches/") and entry.method == 8
+            ),
+            None,
+        )
+        if header_template is None:
+            header_template = next(
+                (entry for entry in entries if entry.method == 8),
+                None,
+            )
+        if header_template is None:
+            raise ValueError("Source archive has no deflated entry to clone")
+        name_encoding = "utf-8" if header_template.flags & 0x800 else "cp437"
         central_offset = eocd[6]
         stream.seek(0)
         local_region = stream.read(central_offset)
@@ -76,25 +91,22 @@ def build(source: Path, output: Path, additions: dict[str, Path]) -> dict:
     with output.open("xb") as dst:
         dst.write(local_region)
         for name, raw in raw_additions.items():
-            name_bytes = name.encode("utf-8")
+            name_bytes = name.encode(name_encoding)
             compressed = deflate(raw)
             crc = zlib.crc32(raw) & 0xFFFFFFFF
             local_offset = dst.tell()
             prefix = local_offset + LOCAL.size + len(name_bytes)
-            preserved = b""
-            natural = prefix + len(preserved)
-            padding_length = (-(natural + 4)) % 4096
-            local_extra = preserved + struct.pack("<HH", 0x1123, padding_length) + bytes(padding_length)
+            local_extra = local_alignment_extra(header_template.extra, prefix)
             payload_offset = prefix + len(local_extra)
             if payload_offset % 4096:
                 raise AssertionError("New local payload is not aligned")
             local_fixed = LOCAL.pack(
                 b"PK\x03\x04",
-                20,
-                0x800,
-                8,
-                0,
-                0,
+                header_template.fixed[2],
+                header_template.fixed[3],
+                header_template.fixed[4],
+                header_template.fixed[5],
+                header_template.fixed[6],
                 crc,
                 len(compressed),
                 len(raw),
@@ -108,24 +120,26 @@ def build(source: Path, output: Path, additions: dict[str, Path]) -> dict:
             # The central-directory alignment field stores the absolute payload
             # offset as a fixed four-byte value; only the local header carries
             # the variable-size padding.
-            central_extra = struct.pack("<HHI", 0x1123, 4, payload_offset)
+            central_extra = central_alignment_extra(
+                header_template.extra, payload_offset
+            )
             central_fixed = CENTRAL.pack(
                 b"PK\x01\x02",
-                20,
-                20,
-                0x800,
-                8,
-                0,
-                0,
+                header_template.fixed[1],
+                header_template.fixed[2],
+                header_template.fixed[3],
+                header_template.fixed[4],
+                header_template.fixed[5],
+                header_template.fixed[6],
                 crc,
                 len(compressed),
                 len(raw),
                 len(name_bytes),
                 len(central_extra),
                 0,
-                0,
-                0,
-                0,
+                header_template.fixed[13],
+                header_template.fixed[14],
+                header_template.fixed[15],
                 local_offset,
             )
             new_entries.append(
@@ -186,6 +200,13 @@ def build(source: Path, output: Path, additions: dict[str, Path]) -> dict:
     return {
         "entries_before": len(entries),
         "entries_after": len(entries) + len(new_entries),
+        "header_template": {
+            "entry": header_template.name,
+            "version_made_by": header_template.fixed[1],
+            "version_needed": header_template.fixed[2],
+            "flags": header_template.fixed[3],
+            "compression_method": header_template.fixed[4],
+        },
         "additions": [item[-1] for item in new_entries],
         "archive": alignment_validation,
         "output_sha256": sha256_file(output),

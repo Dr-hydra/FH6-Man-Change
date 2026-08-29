@@ -26,6 +26,14 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--collapse-fingers-to-hands", action="store_true")
     parser.add_argument("--collapse-toes-to-feet", action="store_true")
     parser.add_argument(
+        "--duplicate-draws-for-lod-groups",
+        action="store_true",
+        help=(
+            "Reuse one intermediate vertex/Skin domain for every donor LOD group, "
+            "while emitting disjoint duplicate index partitions for each group."
+        ),
+    )
+    parser.add_argument(
         "--rigid-extremities",
         action="store_true",
         help="Rigidly bind outer hand and foot regions for stable display animation.",
@@ -154,12 +162,14 @@ def read_intermediate(manifest_path: Path, manifest: dict) -> tuple[list[dict], 
     vertex_info = manifest["files"]["vertices"]
     bone_info = manifest["files"]["bone_indices"]
     index_info = manifest["files"]["indices"]
-    vertex_path = Path(vertex_info["path"])
-    bone_path = Path(bone_info["path"])
-    index_path = Path(index_info["path"])
+    def resolve_input(raw_path: str) -> Path:
+        path = Path(raw_path)
+        return path if path.is_absolute() else manifest_path.parent / path
+
+    vertex_path = resolve_input(vertex_info["path"])
+    bone_path = resolve_input(bone_info["path"])
+    index_path = resolve_input(index_info["path"])
     for path, info in ((vertex_path, vertex_info), (bone_path, bone_info), (index_path, index_info)):
-        if not path.is_absolute():
-            path = manifest_path.parent / path
         if sha256(path) != info["sha256"]:
             raise ValueError(f"Intermediate hash mismatch: {path}")
 
@@ -630,14 +640,38 @@ def main() -> None:
 
     draws = manifest["geometry"].get("draws")
     draw_by_material: dict[int, dict] | None = None
+    lod_group_order: list[int] = []
+    lod_index_offsets: dict[int, int] = {}
     if draws is not None:
         draw_by_material = {int(draw["material_id"]): draw for draw in draws}
         if len(draw_by_material) != len(draws):
             raise ValueError("Intermediate draw material IDs are not unique")
-        if len(meshes) != len(draws):
-            raise ValueError(f"Strict draw export requires one draw per Mesh: {len(draws)} draws, {len(meshes)} meshes")
         if {int(mesh["material_id"]) for mesh in meshes} != set(draw_by_material):
             raise ValueError("Intermediate draw material IDs do not match donor Mesh material IDs")
+        if args.duplicate_draws_for_lod_groups:
+            for mesh in meshes:
+                lod_flags = int(mesh["lod_flags"])
+                if lod_flags not in lod_group_order:
+                    lod_group_order.append(lod_flags)
+            if len(lod_group_order) < 2:
+                raise ValueError(
+                    "--duplicate-draws-for-lod-groups requires at least two donor LOD groups"
+                )
+            for lod_flags in lod_group_order:
+                material_ids = [
+                    int(mesh["material_id"])
+                    for mesh in meshes
+                    if int(mesh["lod_flags"]) == lod_flags
+                ]
+                if len(material_ids) != len(draws) or set(material_ids) != set(draw_by_material):
+                    raise ValueError(
+                        "Every duplicated LOD group must contain exactly one Mesh per "
+                        f"intermediate material: lod={lod_flags}, materials={material_ids}"
+                    )
+        elif len(meshes) != len(draws):
+            raise ValueError(
+                f"Strict draw export requires one draw per Mesh: {len(draws)} draws, {len(meshes)} meshes"
+            )
         cursor = 0
         vertex_cursor = 0
         for draw in sorted(draws, key=lambda item: int(item["start_index"])):
@@ -682,10 +716,18 @@ def main() -> None:
         "vertex_count": len(vertices),
     }], attribute_layout)
 
-    forza_indices: list[int] = []
+    source_forza_indices: list[int] = []
     for offset in range(0, len(blender_indices), 3):
         first, second, third = blender_indices[offset : offset + 3]
-        forza_indices.extend((first, third, second))
+        source_forza_indices.extend((first, third, second))
+    if lod_group_order:
+        forza_indices = source_forza_indices * len(lod_group_order)
+        lod_index_offsets = {
+            lod_flags: group_index * len(source_forza_indices)
+            for group_index, lod_flags in enumerate(lod_group_order)
+        }
+    else:
+        forza_indices = source_forza_indices
     index_payload = struct.pack(f"<{len(forza_indices)}H", *forza_indices)
     vertex_count = len(vertices)
     uv_transform = quantization["uv_transform"]
@@ -699,7 +741,12 @@ def main() -> None:
         active = material_id in draw_by_material if draw_by_material is not None else material_id == 0
         active_meshes += int(active)
         draw = draw_by_material[material_id] if draw_by_material is not None else None
-        start_index = int(draw["start_index"]) if draw is not None else (0 if active else len(forza_indices))
+        lod_offset = lod_index_offsets.get(int(mesh["lod_flags"]), 0)
+        start_index = (
+            int(draw["start_index"]) + lod_offset
+            if draw is not None
+            else (0 if active else len(forza_indices))
+        )
         index_count = int(draw["index_count"]) if draw is not None else (len(forza_indices) if active else 0)
         if active:
             vertex_start = int(draw["vertex_start"]) if draw is not None else 0
@@ -806,7 +853,7 @@ def main() -> None:
             raise ValueError("Candidate Mesh index-count sum differs from IndB count")
     report = {
         "schema_version": 1,
-        "purpose": "Structural FH6 garment modelbin candidate using donor materials and full-resolution geometry in each material-0 LOD; not yet game validated.",
+        "purpose": "Structural FH6 garment modelbin candidate using donor materials and full-resolution geometry; not yet game validated.",
         "donor": {
             "path": str(donor),
             "sha256": sha256(donor),
@@ -875,7 +922,16 @@ def main() -> None:
             "skeleton": "donor Skel retained byte-exact",
             "layout": "donor VLay retained byte-exact",
             "materials": "donor MatI retained byte-exact; source geometry uses material id 0",
-            "lod": "strict intermediate draws physically partition one index buffer" if draw_by_material is not None else f"{active_meshes} material-0 LOD descriptors share one full-resolution vertex/index domain",
+            "lod": (
+                f"{len(lod_group_order)} donor LOD groups share one vertex/Skin domain "
+                "and use duplicate disjoint index partitions"
+                if lod_group_order
+                else (
+                    "strict intermediate draws physically partition one index buffer"
+                    if draw_by_material is not None
+                    else f"{active_meshes} material-0 LOD descriptors share one full-resolution vertex/index domain"
+                )
+            ),
             "inactive_materials": "none" if draw_by_material is not None else "all nonzero donor material Mesh descriptors are retained with empty draw ranges",
             "extra_uvs": f"donor VLay UV indices {attribute_layout['uv_indices']} duplicate TEXCOORD0 in the first writer",
             "extra_tangents": f"donor VLay tangent indices {attribute_layout['tangent_indices']} duplicate TANGENT0 in the first writer",

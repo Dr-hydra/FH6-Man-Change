@@ -21,7 +21,7 @@ from typing import Any
 
 import inspect_modelbin as inspector
 from modelbin_bundle import parse_bundle, rebuild_with_blob_data
-from patch_fh6_racesuit_materials import (
+from fh6_material_codec import (
     decode_7bit,
     encode_7bit,
     material_id,

@@ -53,6 +53,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--component", required=True, choices=("HeadHair", "BodyGarment"))
     parser.add_argument("--donor-name", required=True)
     parser.add_argument("--output-object", required=True)
+    parser.add_argument("--source-prefix", default="FBX_", help="Generated source mesh name prefix")
     parser.add_argument("--pre-milestone", required=True, type=Path)
     parser.add_argument("--output-blend", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
@@ -170,7 +171,7 @@ def main() -> None:
             obj
             for obj in bpy.data.objects
             if obj.type == "MESH"
-            and obj.name.startswith("Si_FBX_")
+            and obj.name.startswith(args.source_prefix)
             and str(obj.get("source_role", "")).casefold() in roles
         ],
         key=lambda obj: obj.name.casefold(),

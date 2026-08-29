@@ -26,7 +26,7 @@ def arguments() -> argparse.Namespace:
     argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-blend", required=True, type=Path)
-    parser.add_argument("--object", default="Si_Garment_FH6_Female_Retarget_v002")
+    parser.add_argument("--object", required=True, help="Mesh object to export")
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--vertices", required=True, type=Path)
     parser.add_argument("--bone-indices", required=True, type=Path)
@@ -43,6 +43,7 @@ def arguments() -> argparse.Namespace:
             "head5_display",
             "head6_display",
             "head7_display",
+            "head8_f04_skin",
             "driver_body6",
         ),
         default="single",
@@ -253,6 +254,20 @@ def component_draw_id(policy: str, material_name: str, centroid: Vector) -> int:
         if material_name == "巩膜":
             return 6
         raise RuntimeError(f"Unhandled source material in head7_display policy: {material_name!r}")
+    if policy == "head8_f04_skin":
+        # F04 carries explicit per-face fh6_draw_id values. This fallback only
+        # exists to make a missing override fail with a useful material role.
+        if material_name == "TR_Hair":
+            return 0
+        if material_name == "TR_EyeShadow":
+            return 1
+        if material_name == "TR_Face_Legacy_Details_F02":
+            return 2
+        if material_name == "TR_EyeSpecular":
+            return 3
+        if material_name == "TR_Face_FH6_Skin_F04":
+            return 6
+        raise RuntimeError(f"Unhandled source material in head8_f04_skin policy: {material_name!r}")
     if policy == "driver_body6":
         # Driver_Alice_F MatI IDs: 0 head, 1 eyelashes, 2 eyes,
         # 3 body, 4 arms/hands, and 5 teeth. The writer expands draw 1 into
@@ -333,6 +348,22 @@ def main() -> None:
     normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
 
     material_names = [material.name if material else f"Material_{index}" for index, material in enumerate(mesh.materials)]
+    draw_override = mesh.attributes.get("fh6_draw_id")
+    if draw_override is not None and (
+        draw_override.domain != "FACE" or draw_override.data_type != "INT"
+    ):
+        raise RuntimeError("fh6_draw_id must be a FACE/INT attribute")
+    # Blender can retain an empty FACE attribute after manual face deletion.
+    # Treat that stale record as absent so the documented spatial/material
+    # fallback policy remains authoritative for the surviving polygons.
+    if draw_override is not None and len(draw_override.data) != len(mesh.polygons):
+        if len(draw_override.data) == 0:
+            draw_override = None
+        else:
+            raise RuntimeError(
+                "fh6_draw_id length does not match surviving polygon count: "
+                f"{len(draw_override.data)} != {len(mesh.polygons)}"
+            )
 
     draw_counts = {
         "single": 1,
@@ -344,6 +375,7 @@ def main() -> None:
         "head5_display": 5,
         "head6_display": 6,
         "head7_display": 7,
+        "head8_f04_skin": 8,
         "driver_body6": 6,
     }
     draw_count = draw_counts[args.draw_policy]
@@ -356,6 +388,7 @@ def main() -> None:
         "head5_display": {0: "表情", 1: "目", 2: "面", 3: "肌", 4: "睫眉"},
         "head6_display": {0: "发", 1: "目影", 2: "面", 3: "目", 4: "睫眉", 5: "发影"},
         "head7_display": {0: "发", 1: "目影", 2: "面", 3: "目", 4: "睫眉", 5: "发影", 6: "巩膜"},
+        "head8_f04_skin": {0: "TR_Hair", 5: "TR_Hair", 7: "TR_Hair"},
         "driver_body6": {
             0: "面",
             1: "睫眉",
@@ -376,7 +409,14 @@ def main() -> None:
             Vector((0.0, 0.0, 0.0)),
         ) / 3.0
         material_name = material_names[material_index]
-        if args.draw_policy == "single":
+        override = int(draw_override.data[polygon.index].value) if draw_override is not None else -1
+        if override >= 0:
+            if args.draw_policy == "single" or override >= draw_count:
+                raise RuntimeError(
+                    f"Triangle {triangle.index} has invalid fh6_draw_id={override} for {args.draw_policy}"
+                )
+            draw_id = override
+        elif args.draw_policy == "single":
             draw_id = 0
         else:
             draw_id = component_draw_id(args.draw_policy, material_name, centroid)
@@ -402,6 +442,8 @@ def main() -> None:
             source_vertex = int(loop.vertex_index)
             uv = Vector(uv_layer.data[loop_index].uv)
             local_normal = Vector(corner_normals[loop_index].vector)
+            if local_normal.length < 1e-4:
+                local_normal = Vector(polygon.normal) if Vector(polygon.normal).length > 1e-4 else Vector((0.0, 0.0, 1.0))
             world_normal = (normal_matrix @ local_normal).normalized()
             # A source corner may be used by multiple material draws. Each draw
             # needs its own dense vertex domain in FH6 Mesh descriptors.

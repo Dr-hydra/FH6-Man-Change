@@ -29,6 +29,7 @@ HEAD_DISPLAY_RENDER_PASSES = {
     4: 0x38,
     5: 0x3C,
     6: 0x19,
+    7: 0x38,
 }
 
 
@@ -44,6 +45,14 @@ def arguments() -> argparse.Namespace:
         help=(
             "Allow MatI payload changes and verify every final material against "
             "this explicit profile. The donor must be the pre-material geometry candidate."
+        ),
+    )
+    parser.add_argument(
+        "--duplicate-draws-for-lod-groups",
+        action="store_true",
+        help=(
+            "Expect every active donor LOD group to reuse the manifest draw "
+            "domain through its own contiguous duplicate index partition."
         ),
     )
     parser.add_argument("--report", required=True, type=Path)
@@ -288,10 +297,19 @@ def main() -> None:
     index_count = int(index_buffer["count"])
     index_payload = index_blob[16 : 16 + int(index_buffer["byte_size"])]
     indices = list(struct.unpack(f"<{index_count}H", index_payload))
+    lod_flags = sorted({int(mesh["lod_flags"]) for mesh in meshes})
+    expected_index_multiplier = len(lod_flags) if args.duplicate_draws_for_lod_groups else 1
+    expected_index_count = int(manifest["geometry"]["indices"]) * expected_index_multiplier
     check(
         "index.manifest_count",
-        index_count == int(manifest["geometry"]["indices"]),
-        {"candidate": index_count, "manifest": int(manifest["geometry"]["indices"])},
+        index_count == expected_index_count,
+        {
+            "candidate": index_count,
+            "manifest": int(manifest["geometry"]["indices"]),
+            "lod_groups": lod_flags,
+            "expected_multiplier": expected_index_multiplier,
+            "expected": expected_index_count,
+        },
     )
     check(
         "vertex.manifest_count",
@@ -321,6 +339,21 @@ def main() -> None:
     draws = {int(item["material_id"]): item for item in manifest["geometry"]["draws"]}
     mesh_materials = {int(mesh["material_id"]) for mesh in meshes}
     check("mesh.material_domains", mesh_materials == set(draws), {"candidate": sorted(mesh_materials), "manifest": sorted(draws)})
+    if args.duplicate_draws_for_lod_groups:
+        lod_domains = {
+            lod_flag: sorted(
+                int(mesh["material_id"])
+                for mesh in meshes
+                if int(mesh["lod_flags"]) == lod_flag
+            )
+            for lod_flag in lod_flags
+        }
+        check(
+            "lod.duplicate_draw_domains",
+            len(lod_flags) >= 2
+            and all(materials == sorted(draws) for materials in lod_domains.values()),
+            {"lod_groups": lod_domains, "manifest_materials": sorted(draws)},
+        )
 
     mesh_domains: list[dict] = []
     mesh_domains_valid = True
@@ -388,6 +421,7 @@ def main() -> None:
         "helmet6_face_combined",
         "head6_display",
         "head7_display",
+        "head8_f04_skin",
     }:
         actual_render_passes = {int(mesh["material_id"]): int(mesh["render_pass"]) for mesh in meshes}
         expected_render_passes = {

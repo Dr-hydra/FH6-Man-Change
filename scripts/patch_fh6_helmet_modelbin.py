@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Patch a FH6 helmet donor with the component intermediate.
 
-Helmet donors use two vertex layouts and two skin streams.  The retail donor
-currently stores one influence per vertex, while the FBX-first intermediate
-contains up to four influences.  The first writer keeps the donor ``Skel``,
-``VLay`` and ``MatI`` blobs, but expands both Skin streams to the standard
-four-influence stride and updates each Mesh descriptor's skinning-element
-count.  The donor mesh order is material-interleaved, so the index buffer is
-rebuilt in that order while the intermediate's dense vertex domains are
-remapped accordingly.
+Helmet retail streams use one ``R16G16_FLOAT`` influence pair per vertex
+(4-byte stride).  The writer therefore keeps that exact contract and advertises
+one skinning element on every Mesh descriptor.  Donor ``Skel``, ``VLay`` and
+``MatI`` blobs remain byte-identical.
 """
 
 from __future__ import annotations
@@ -33,14 +29,52 @@ from patch_fh6_garment_modelbin import (
 )
 
 
-FACE_COMBINED_RENDER_PASSES = {
-    0: 0x38,  # Hair
-    1: 0x19,  # Eyes
-    2: 0x19,  # Face
-    3: 0x19,  # Neck
-    4: 0x38,  # Eyelashes
-    5: 0x3C,  # Hair shadow
-    6: 0x19,  # Sclera
+HEAD_RENDER_PASSES = {
+    "helmet6_face_combined": {
+        0: 0x38,  # Hair
+        1: 0x19,  # Sclera
+        2: 0x19,  # Face
+        3: 0x19,  # Iris
+        4: 0x38,  # Eyelashes
+        5: 0x3C,  # Hair shadow
+    },
+    "head6_display": {
+        0: 0x38,
+        1: 0x19,
+        2: 0x19,
+        3: 0x19,
+        4: 0x38,
+        5: 0x3C,
+    },
+    "head7_display": {
+        0: 0x38,
+        1: 0x19,
+        2: 0x19,
+        3: 0x19,
+        4: 0x38,
+        5: 0x3C,
+        6: 0x19,  # Dedicated sclera in the FBX seven-draw contract.
+    },
+    "head8_f04_skin": {
+        0: 0x38,  # Hair.
+        1: 0x19,  # Eye shadow/detail.
+        2: 0x19,  # Legacy anime face details.
+        3: 0x19,  # Eye specular/iris detail.
+        4: 0x38,  # Eyelash/eye shadow reserve.
+        5: 0x3C,  # Hair shadow reserve.
+        6: 0x19,  # FH6-UV face skin.
+        7: 0x38,  # Spare rear-hair triangle for the eight-draw container.
+    },
+    "pmx_head_accessories8": {
+        0: 0x38,
+        1: 0x19,
+        2: 0x19,
+        3: 0x19,
+        4: 0x38,
+        5: 0x3C,
+        6: 0x38,  # PMX Cloth1 head attachments.
+        7: 0x38,  # PMX Cloth2 horns and attachments.
+    },
 }
 
 
@@ -160,8 +194,8 @@ def main() -> None:
             raise ValueError(f"Expected {count} {tag} blobs, found {len(tag_indices.get(tag, []))}: {tags}")
     mesh_blob_indices = tag_indices.get("Mesh", [])
     meshes = parsed["meshes"]
-    if len(meshes) not in (6, 7) or len(meshes) != len(mesh_blob_indices):
-        raise ValueError("Helmet donor must contain six or seven Mesh 1.12 descriptors")
+    if len(meshes) not in (6, 7, 8) or len(meshes) != len(mesh_blob_indices):
+        raise ValueError("Helmet donor must contain six, seven, or eight Mesh 1.12 descriptors")
     if any(mesh["blob_version"] != "1.12" for mesh in meshes):
         raise ValueError("Helmet donor Mesh descriptors must be version 1.12")
 
@@ -182,6 +216,11 @@ def main() -> None:
     for material_id, layout_id in layout_by_material.items():
         if layout_id not in (0, 1):
             raise ValueError(f"Unsupported Helmet vertex layout {layout_id} for material {material_id}")
+    layout_order = [int(mesh["vertex_layout_id"]) for mesh in meshes]
+    if layout_order != sorted(layout_order, reverse=True):
+        raise ValueError(
+            "Helmet Mesh order must keep every layout-1 domain before layout-0 domains"
+        )
 
     # Reorder source draw domains exactly as the donor Mesh blobs are ordered.
     # This keeps each Mesh's start_index contiguous while allowing a shared
@@ -306,25 +345,29 @@ def main() -> None:
     replacements[replacement_by_id[2]["blob_index"]] = build_model_buffer(
         bytes(attribute0_payload), layout0_count, 40, tuple(replacement_by_id[2]["flags"]), int(replacement_by_id[2]["format"])
     )
-    # The source intermediate is a normal four-influence export.  The retail
-    # helmet donor's streams are one-influence, but retaining only pair 0
-    # silently drops facial/eyelid/hair weights and produces broken animation.
-    # Expand both streams and advertise the count on every Mesh descriptor.
-    skin_influences = 4
+    # Helmet is deliberately a rigid Display prototype: v024 collapsed face,
+    # eye and hair vertices to Head/LeftEye/RightEye.  Keep only pair 0 and
+    # match the retail Skin stride instead of making the runtime decode a
+    # fabricated four-influence stream.
+    skin_influences = 1
+    skin_stride = 4
     for skin_payload, layout_count, skin_id in (
         (skin1_payload, layout1_count, 1),
         (skin0_payload, layout0_count, 0),
     ):
-        expected_bytes = layout_count * skin_influences * 4
-        if len(skin_payload) != expected_bytes:
+        source_stride = 16
+        if len(skin_payload) != layout_count * source_stride:
             raise ValueError(
                 f"Helmet Skin {skin_id} payload has {len(skin_payload)} bytes; "
-                f"expected {expected_bytes} for {layout_count} vertices"
+                f"expected {layout_count * source_stride} for {layout_count} vertices"
             )
+        compact_payload = bytearray()
+        for vertex_index in range(layout_count):
+            compact_payload.extend(skin_payload[vertex_index * source_stride : vertex_index * source_stride + skin_stride])
         replacements[skin_by_id[skin_id]["blob_index"]] = build_model_buffer(
-            bytes(skin_payload),
+            bytes(compact_payload),
             layout_count,
-            skin_influences * 4,
+            skin_stride,
             tuple(skin_by_id[skin_id]["flags"]),
             int(skin_by_id[skin_id]["format"]),
         )
@@ -349,13 +392,15 @@ def main() -> None:
             translate=list(draw_quantization["translate"]),
             position_offset=0 if layout_id == 1 else layout1_count * 8,
         )
-        if manifest["geometry"].get("draw_policy") in {
-            "helmet6_face_combined",
-            "head6_display",
-            "head7_display",
-        }:
+        draw_policy = manifest["geometry"].get("draw_policy")
+        if draw_policy in HEAD_RENDER_PASSES:
+            render_passes = HEAD_RENDER_PASSES[draw_policy]
+            if set(render_passes) != set(draw_by_material):
+                raise ValueError(
+                    f"Render-pass policy {draw_policy} differs from the material domain"
+                )
             patched_mesh = bytearray(patched_mesh)
-            struct.pack_into("<H", patched_mesh, 14, FACE_COMBINED_RENDER_PASSES[material_id])
+            struct.pack_into("<H", patched_mesh, 14, render_passes[material_id])
             patched_mesh = bytes(patched_mesh)
         mesh_replacements[blob_index] = patch_mesh_skinning_elements(patched_mesh, skin_influences)
     replacements.update(mesh_replacements)
@@ -413,9 +458,9 @@ def main() -> None:
             "index_buffer": candidate_report["parsed"]["index_buffers"][0], "vertex_buffers": candidate_report["parsed"]["vertex_buffers"], "skin_buffers": candidate_report["parsed"]["skin_buffers"],
         },
         "quantization": quantization,
-        "layout_domains": {"layout1": {"materials": [m for m, v in layout_by_material.items() if v == 1], "vertices": layout1_count, "attribute_stride": 20, "skin_stride": 16}, "layout0": {"materials": [m for m, v in layout_by_material.items() if v == 0], "vertices": layout0_count, "attribute_stride": 40, "skin_stride": 16}},
+        "layout_domains": {"layout1": {"materials": [m for m, v in layout_by_material.items() if v == 1], "vertices": layout1_count, "attribute_stride": 20, "skin_stride": skin_stride}, "layout0": {"materials": [m for m, v in layout_by_material.items() if v == 0], "vertices": layout0_count, "attribute_stride": 40, "skin_stride": skin_stride}},
         "preserved_blobs": preservation,
-        "policies": {"skeleton": "donor Skel retained byte-exact", "materials": "donor MatI retained byte-exact", "layouts": "donor VLay retained byte-exact; per-mesh layout IDs and buffer bindings retained", "mesh_order": "index and vertex domains rebuilt in donor Mesh blob order", "skinning": "source four-influence weights retained; both donor Skin streams expanded to stride 16 and Mesh skinning_elements=4", "render_pass": "head display face/eyes/sclera use 0x19, hair/eyelashes use 0x38, and hair shadow uses 0x3C", "lod": "all donor LOD flags retained; first candidate shares the full-resolution domain"},
+        "policies": {"skeleton": "donor Skel retained byte-exact", "materials": "donor MatI retained byte-exact", "layouts": "donor VLay retained byte-exact; per-mesh layout IDs and buffer bindings retained", "mesh_order": "index and vertex domains rebuilt in donor Mesh blob order", "skinning": "retail one-influence R16G16_FLOAT pair; both Skin streams stride 4 and every Mesh skinning_elements=1", "render_pass": "head display face/eyes/sclera use 0x19, hair/eyelashes use 0x38, and hair shadow uses 0x3C", "lod": "all donor LOD flags retained; first candidate shares the full-resolution domain"},
         "validation_level": {"structural": True, "blender_visual": False, "offline_game": False},
         "license_guard": "Local technical validation only; do not redistribute this candidate.",
     }

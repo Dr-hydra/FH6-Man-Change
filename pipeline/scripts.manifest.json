@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "shared_root": "scripts",
+  "policy": {
+    "edit_shared_in_place": false,
+    "copy_to_mod_before_customizing": true,
+    "mod_script_pattern": "mods/<mod-id>/scripts/<line>/"
+  },
+  "lines": {
+    "fbx_to_display": [
+      "scripts/import_fbx_baseline.py",
+      "scripts/import_fh6_modelbin_baseline.py",
+      "scripts/create_fbx_component_split.py",
+      "scripts/create_donor_position_probe.py",
+      "scripts/retarget_fh6_component.py",
+      "scripts/retarget_garment_to_fh6_female.py",
+      "scripts/export_blend_skeleton.py",
+      "scripts/export_fh6_garment_intermediate.py",
+      "scripts/roundtrip_modelbin.py"
+    ],
+    "display_to_driver": [
+      "scripts/prepare_fh6_driver_intermediate.py",
+      "scripts/retarget_fh6_driver_body.py",
+      "scripts/patch_fh6_driver_body_modelbin.py",
+      "scripts/patch_fh6_helmet_modelbin.py",
+      "scripts/patch_fh6_garment_modelbin.py"
+    ],
+    "package": [
+      "scripts/modelbin_bundle.py",
+      "scripts/inspect_modelbin.py",
+      "scripts/compare_modelbin.py",
+      "scripts/verify_fh6_modelbin_candidate.py",
+      "scripts/transplant_fh6_mati.py",
+      "scripts/convert_fh6_swatchbin.py",
+      "scripts/rebuild_fh6_aligned_zip.py",
+      "scripts/add_fh6_aligned_zip.py",
+      "scripts/build_fh6_artifact_inventory.py"
+    ],
+    "installer": [
+      "scripts/install_fh6_mod.py",
+      "scripts/install_fh6_mod_gui.py",
+      "scripts/build_fh6_mod_gui_installer.py",
+      "scripts/fh6_xml_patch.py",
+      "scripts/deploy_fh6_mod_package.py",
+      "scripts/deploy_fh6_modelbin.py"
+    ]
+  }
+}

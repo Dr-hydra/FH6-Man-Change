@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from modelbin_bundle import parse_bundle
-from patch_fh6_racesuit_materials import (
+from fh6_material_codec import (
     decode_7bit,
     material_id,
     material_name,

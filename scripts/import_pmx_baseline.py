@@ -184,7 +184,7 @@ def armature_inventory() -> tuple[list[dict], dict]:
 
 def main() -> None:
     args = parse_args()
-    print("FH6_SOURCE_WARNING=PMX is a legacy compatibility source; use build_si_fbx_source.ps1 for new Si work")
+    print("FH6_SOURCE_WARNING=PMX is a legacy compatibility source; prefer the native FBX workflow for new imports")
     pmx = args.pmx.resolve()
     blend = args.blend.resolve()
     metadata_path = args.metadata.resolve()

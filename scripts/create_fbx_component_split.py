@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--blend", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--lod", default="lod0")
+    parser.add_argument("--name-prefix", default="FBX", help="Prefix for generated armature and mesh names")
     return parser.parse_args(argv)
 
 
@@ -40,11 +41,11 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def duplicate_armature(source: bpy.types.Object, collection: bpy.types.Collection) -> bpy.types.Object:
+def duplicate_armature(source: bpy.types.Object, collection: bpy.types.Collection, name_prefix: str) -> bpy.types.Object:
     duplicate = source.copy()
     duplicate.data = source.data.copy()
-    duplicate.name = "Si_FBX_SourceRig_REST"
-    duplicate.data.name = "Si_FBX_SourceRig_REST"
+    duplicate.name = f"{name_prefix}_SourceRig_REST"
+    duplicate.data.name = duplicate.name
     duplicate.data.pose_position = "REST"
     duplicate.hide_select = False
     duplicate.hide_viewport = False
@@ -61,10 +62,11 @@ def duplicate_mesh(
     target_armature: bpy.types.Object,
     collection: bpy.types.Collection,
     role: str,
+    name_prefix: str,
 ) -> bpy.types.Object:
     duplicate = source.copy()
     duplicate.data = source.data.copy()
-    duplicate.name = f"Si_FBX_{role.title()}_{source.name}"
+    duplicate.name = f"{name_prefix}_{role.title()}_{source.name}"
     duplicate.data.name = duplicate.name
     duplicate.parent = None
     duplicate.matrix_world = source.matrix_world.copy()
@@ -147,7 +149,7 @@ def main() -> None:
 
     rig_collection = bpy.data.collections.new("FBX_SOURCE_RIG")
     bpy.context.scene.collection.children.link(rig_collection)
-    working_armature = duplicate_armature(source_armatures[0], rig_collection)
+    working_armature = duplicate_armature(source_armatures[0], rig_collection, args.name_prefix)
     component_collections = {}
     for role, collection_name in COMPONENT_COLLECTIONS.items():
         collection = bpy.data.collections.new(collection_name)
@@ -167,7 +169,13 @@ def main() -> None:
     if not source_meshes:
         raise ValueError(f"No FBX component meshes found for {args.lod}")
     working_meshes = [
-        duplicate_mesh(source, working_armature, component_collections[source["source_role"]], source["source_role"])
+        duplicate_mesh(
+            source,
+            working_armature,
+            component_collections[source["source_role"]],
+            source["source_role"],
+            args.name_prefix,
+        )
         for source in sorted(source_meshes, key=lambda item: item.name.casefold())
     ]
     records = [mesh_record(obj) for obj in working_meshes]

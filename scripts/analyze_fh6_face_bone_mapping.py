@@ -33,7 +33,7 @@ def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-blend", required=True, type=Path)
     parser.add_argument("--donor-blend", required=True, type=Path)
-    parser.add_argument("--object", default="Si_Head_SourceSplit_v001")
+    parser.add_argument("--object", required=True, help="Source mesh object to analyze")
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args(argv)
 

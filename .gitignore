@@ -1,6 +1,12 @@
 # Generated milestones, extracted donors, renders, and deployment staging.
 /work/
 
+# Mod projects, source assets, and release payloads are maintained separately
+# from this public reusable-pipeline repository.
+/mods/
+/sources/
+/releases/
+
 # Licensed or immutable source/donor binaries stay outside version control.
 *.blend
 *.blend1
@@ -10,6 +16,7 @@
 *.swatchbin
 *.zip
 *.7z
+*.exe
 *.dds
 *.png
 *.jpg
@@ -39,3 +46,6 @@ htmlcov/
 *.bak
 Thumbs.db
 Desktop.ini
+
+# Local build caches and embedded dependency checkouts.
+/tools/.cache/

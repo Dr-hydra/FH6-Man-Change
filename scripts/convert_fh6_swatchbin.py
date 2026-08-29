@@ -71,7 +71,10 @@ def arguments() -> argparse.Namespace:
     parser.add_argument(
         "--normal-xy",
         action="store_true",
-        help="Require the source B channel to be the Si two-channel-normal zero pad.",
+        help=(
+            "Require the Si two-channel-normal zero pad and reconstruct normalized Z "
+            "after resampling."
+        ),
     )
     return parser.parse_args()
 
@@ -179,6 +182,25 @@ def resize_channels(image: Image.Image, size: tuple[int, int], name: str) -> Ima
     )
 
 
+def reconstruct_normal_z(image: Image.Image) -> Image.Image:
+    """Expand signed UNORM8 tangent XY into a normalized positive Z channel."""
+
+    if image.mode != "RGBA":
+        raise ValueError("Normal reconstruction requires an RGBA image")
+    blue_by_xy = bytearray(256 * 256)
+    for red in range(256):
+        x = red / 127.5 - 1.0
+        for green in range(256):
+            y = green / 127.5 - 1.0
+            z = math.sqrt(max(0.0, 1.0 - x * x - y * y))
+            blue_by_xy[(red << 8) | green] = round((z + 1.0) * 127.5)
+
+    rgba = bytearray(image.tobytes("raw", "RGBA"))
+    for offset in range(0, len(rgba), 4):
+        rgba[offset + 2] = blue_by_xy[(rgba[offset] << 8) | rgba[offset + 1]]
+    return Image.frombytes("RGBA", image.size, bytes(rgba))
+
+
 def decoded_error(expected: Image.Image, actual: Image.Image) -> dict[str, Any]:
     if expected.size != actual.size:
         raise ValueError("Decoded swatch dimensions do not match encoded source")
@@ -255,7 +277,10 @@ def main() -> int:
     target_size = (template_info["width"], template_info["height"])
     resampled = rgba.size != target_size
     converted = resize_channels(rgba, target_size, args.resample) if resampled else rgba.copy()
+    if args.normal_xy:
+        converted = reconstruct_normal_z(converted)
     converted_alpha = image_alpha(converted)
+    converted_blue = converted.getchannel("B").getextrema()
 
     with tempfile.TemporaryDirectory(prefix="fh6-swatch-") as temporary:
         temporary_dir = Path(temporary)
@@ -331,6 +356,8 @@ def main() -> int:
             "resampled": resampled,
             "resample_filter": args.resample if resampled else None,
             "target_size": list(target_size),
+            "normal_z_reconstructed": bool(args.normal_xy),
+            "converted_blue_extrema": list(converted_blue),
             "converted_rgba_sha256": image_digest(converted),
             "converted_alpha": converted_alpha,
         },
@@ -351,6 +378,7 @@ def main() -> int:
             "hard_error_count": len(hard_errors),
             "hard_errors": hard_errors,
             "source_alpha_loaded_without_premultiply": True,
+            "normal_z_reconstructed_after_resampling": bool(args.normal_xy),
             "template_layout_preserved": not hard_errors,
             "header_guid_matches_filename_or_explicit_guid": output_info["guid"] == str(guid),
             "top_mip_decoded": True,
